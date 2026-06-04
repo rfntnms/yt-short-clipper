@@ -142,3 +142,51 @@ def extract_video_id(url: str) -> str:
         if match:
             return match.group(1)
     return None
+
+
+def hex_to_rgb(hex_color: str):
+    """Convert a #RRGGBB or #RGB string to an (R, G, B) tuple. Falls back to white on bad input."""
+    if not isinstance(hex_color, str):
+        return (255, 255, 255)
+    s = hex_color.strip().lstrip("#")
+    if len(s) == 3:
+        s = "".join(ch * 2 for ch in s)
+    if len(s) != 6:
+        return (255, 255, 255)
+    try:
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except ValueError:
+        return (255, 255, 255)
+
+
+def ensure_binaries_in_path():
+    """Ensure Deno and FFmpeg bundled binaries are added to the environment PATH.
+    
+    Returns:
+        dict: Information about which paths were found/added
+            - deno_path: path to Deno binary or None
+            - ffmpeg_path: path to FFmpeg binary or None
+    """
+    import os
+    
+    result = {
+        "deno_path": get_deno_path(),
+        "ffmpeg_path": get_ffmpeg_path()
+    }
+    
+    if result["deno_path"] and Path(result["deno_path"]).exists():
+        deno_dir = str(Path(result["deno_path"]).parent)
+        if "PATH" in os.environ:
+            if deno_dir not in os.environ["PATH"]:
+                os.environ["PATH"] = f"{deno_dir}{os.pathsep}{os.environ['PATH']}"
+        else:
+            os.environ["PATH"] = deno_dir
+            
+    return result
+
+
+def parse_timestamp(ts: str) -> float:
+    """Convert timestamp to seconds"""
+    ts = ts.replace(",", ".")
+    parts = ts.split(":")
+    return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])

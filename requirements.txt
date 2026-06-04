@@ -13,3 +13,6 @@ curl-cffi>=0.14.0
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
+
+# Optional: Fast GPU Portrait Detection (YOLO)
+# ultralytics>=8.1.0

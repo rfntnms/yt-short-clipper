@@ -21,6 +21,7 @@ class GPUDetector:
         self.ffmpeg_path = ffmpeg_path
         self._gpu_info = None
         self._ffmpeg_encoders = None
+        self._tested_encoders = {}
     
     def detect_gpu(self) -> dict:
         """
@@ -371,12 +372,16 @@ class GPUDetector:
                 for line in output.split('\n'):
                     line = line.strip()
                     # Look for hardware encoder lines
-                    if any(enc in line for enc in ['h264_nvenc', 'h264_amf', 'h264_qsv', 'h264_mf', 'h264_videotoolbox']):
+                    hardware_encoders = [
+                        'h264_nvenc', 'h264_amf', 'h264_qsv', 'h264_mf', 'h264_videotoolbox',
+                        'hevc_nvenc', 'hevc_amf', 'hevc_qsv', 'hevc_mf', 'hevc_videotoolbox'
+                    ]
+                    if any(enc in line for enc in hardware_encoders):
                         # Extract encoder name (format: " V....D h264_nvenc ...")
                         parts = line.split()
                         if len(parts) >= 2:
                             encoder_name = parts[1]
-                            if encoder_name.startswith('h264_'):
+                            if encoder_name.startswith('h264_') or encoder_name.startswith('hevc_'):
                                 encoders.append(encoder_name)
                 
                 self._ffmpeg_encoders = encoders
@@ -387,8 +392,37 @@ class GPUDetector:
         
         self._ffmpeg_encoders = []
         return []
+
+    def get_decode_args(self, use_gpu: bool = True) -> list:
+        """
+        Get FFmpeg hardware decode arguments based on the detected GPU.
+        
+        Args:
+            use_gpu: If False, returns empty list.
+            
+        Returns:
+            list of FFmpeg arguments (e.g., ['-hwaccel', 'cuda'])
+        """
+        if not use_gpu:
+            return []
+            
+        gpu = self.detect_gpu()
+        gpu_type = gpu.get('type')
+        
+        if gpu_type == 'nvidia':
+            return ['-hwaccel', 'cuda']
+        elif gpu_type == 'intel':
+            return ['-hwaccel', 'qsv']
+        elif gpu_type == 'amd':
+            if sys.platform == "win32":
+                return ['-hwaccel', 'd3d11va']
+            return ['-hwaccel', 'auto']
+        elif gpu_type == 'apple':
+            return ['-hwaccel', 'videotoolbox']
+            
+        return ['-hwaccel', 'auto']
     
-    def get_recommended_encoder(self) -> dict:
+    def get_recommended_encoder(self, preferred_codec: str = "h264") -> dict:
         """
         Get recommended encoder based on detected GPU
         
@@ -410,12 +444,23 @@ class GPUDetector:
                 'reason': 'No GPU detected'
             }
         
-        # Map GPU type to encoder
+        codec = preferred_codec if preferred_codec in ("h264", "hevc") else "h264"
+
+        # Map GPU type to encoder. HEVC is optional and only selected when
+        # explicitly requested because H.264 is the safest shorts/export default.
         encoder_map = {
-            'nvidia': 'h264_nvenc',
-            'amd': 'h264_amf',
-            'intel': 'h264_qsv',
-            'apple': 'h264_videotoolbox'
+            'h264': {
+                'nvidia': 'h264_nvenc',
+                'amd': 'h264_amf',
+                'intel': 'h264_qsv',
+                'apple': 'h264_videotoolbox'
+            },
+            'hevc': {
+                'nvidia': 'hevc_nvenc',
+                'amd': 'hevc_amf',
+                'intel': 'hevc_qsv',
+                'apple': 'hevc_videotoolbox'
+            }
         }
         
         preset_map = {
@@ -425,7 +470,7 @@ class GPUDetector:
             'apple': None         # VideoToolbox doesn't use presets
         }
         
-        recommended_encoder = encoder_map.get(gpu['type'])
+        recommended_encoder = encoder_map[codec].get(gpu['type'])
         
         if recommended_encoder in encoders:
             return {
@@ -442,7 +487,48 @@ class GPUDetector:
                 'reason': f"GPU detected ({gpu['name']}) but FFmpeg doesn't support {recommended_encoder}"
             }
     
-    def get_encoder_args(self, use_gpu: bool = True) -> list:
+    def test_encoder(self, encoder: str, timeout: int = 10) -> dict:
+        """Run a tiny synthetic encode to verify an FFmpeg encoder works."""
+        if not encoder:
+            return {'available': False, 'reason': 'No encoder specified'}
+
+        if encoder in self._tested_encoders:
+            return self._tested_encoders[encoder]
+
+        try:
+            cmd = [
+                self.ffmpeg_path, '-hide_banner', '-y',
+                '-f', 'lavfi',
+                '-i', 'testsrc2=size=256x256:rate=1:duration=1',
+                '-frames:v', '1',
+                '-c:v', encoder,
+                '-f', 'null',
+                '-'
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                creationflags=SUBPROCESS_FLAGS
+            )
+            if result.returncode == 0:
+                tested = {'available': True, 'reason': 'Encoder test passed'}
+            else:
+                stderr = (result.stderr or '').strip()
+                reason = next(
+                    (line.strip() for line in stderr.splitlines()
+                     if 'error' in line.lower() or 'failed' in line.lower()),
+                    stderr.splitlines()[-1].strip() if stderr else 'Encoder test failed'
+                )
+                tested = {'available': False, 'reason': reason[:200]}
+        except Exception as e:
+            tested = {'available': False, 'reason': str(e)[:200]}
+
+        self._tested_encoders[encoder] = tested
+        return tested
+
+    def get_encoder_args(self, use_gpu: bool = True, preferred_codec: str = "h264", encoder: str = "auto") -> list:
         """
         Get FFmpeg encoder arguments
         
@@ -454,15 +540,17 @@ class GPUDetector:
         """
         if not use_gpu:
             # CPU encoding (default)
+            if preferred_codec == "hevc":
+                return ['-c:v', 'libx265', '-preset', 'fast', '-crf', '22']
             return ['-c:v', 'libx264', '-preset', 'fast', '-crf', '18']
         
-        recommendation = self.get_recommended_encoder()
+        recommendation = self.get_recommended_encoder(preferred_codec=preferred_codec)
         
         if not recommendation['available']:
             # Fallback to CPU
-            return ['-c:v', 'libx264', '-preset', 'fast', '-crf', '18']
+            return self.get_encoder_args(use_gpu=False, preferred_codec=preferred_codec)
         
-        encoder = recommendation['encoder']
+        encoder = encoder if encoder and encoder != "auto" else recommendation['encoder']
         preset = recommendation['preset']
         
         # Build encoder-specific arguments
@@ -507,6 +595,37 @@ class GPUDetector:
                 '-q:v', '65',  # Quality 1-100, 65 is good balance
                 '-pix_fmt', 'yuv420p'
             ]
+        elif encoder == 'hevc_nvenc':
+            return [
+                '-c:v', 'hevc_nvenc',
+                '-preset', preset,
+                '-rc', 'vbr',
+                '-cq', '23',
+                '-b:v', '0',
+                '-pix_fmt', 'yuv420p'
+            ]
+        elif encoder == 'hevc_amf':
+            return [
+                '-c:v', 'hevc_amf',
+                '-quality', preset,
+                '-rc', 'vbr_latency',
+                '-qp_i', '22',
+                '-qp_p', '23',
+                '-pix_fmt', 'yuv420p'
+            ]
+        elif encoder == 'hevc_qsv':
+            return [
+                '-c:v', 'hevc_qsv',
+                '-preset', preset,
+                '-global_quality', '23',
+                '-pix_fmt', 'yuv420p'
+            ]
+        elif encoder == 'hevc_videotoolbox':
+            return [
+                '-c:v', 'hevc_videotoolbox',
+                '-q:v', '60',
+                '-pix_fmt', 'yuv420p'
+            ]
         
         # Fallback to CPU
-        return ['-c:v', 'libx264', '-preset', 'fast', '-crf', '18']
+        return self.get_encoder_args(use_gpu=False, preferred_codec=preferred_codec)

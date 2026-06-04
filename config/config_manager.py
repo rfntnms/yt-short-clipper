@@ -74,11 +74,58 @@ class ConfigManager:
                         "secret_key": ""
                     }
                 
-                # Add default GPU settings if not exists
+                # Migrate existing GPU config to include cache keys
                 if "gpu_acceleration" not in config:
                     config["gpu_acceleration"] = {
-                        "enabled": False
+                        "enabled": False,
+                        "cached_encoder": None,
+                        "cached_gpu_name": None,
+                        "cache_timestamp": None
                     }
+                else:
+                    gpu_cfg = config["gpu_acceleration"]
+                    if "cached_encoder" not in gpu_cfg:
+                        gpu_cfg["cached_encoder"] = None
+                        gpu_cfg["cached_gpu_name"] = None
+                        gpu_cfg["cache_timestamp"] = None
+                        
+                # Add or migrate performance config
+                if "performance" not in config:
+                    legacy_face_mode = config.get("face_tracking_mode", "hybrid_auto")
+                    legacy_gpu_enabled = config.get("gpu_acceleration", {}).get("enabled", True)
+                    
+                    config["performance"] = {
+                        "profile": "balanced",
+                        "encoder": "auto",
+                        "detection_engine": legacy_face_mode,
+                        "detection_interval": 10,
+                        "prefer_gpu": legacy_gpu_enabled,
+                        "fallback_to_cpu": True,
+                        "decode_enabled": True
+                    }
+                    self.save_config(config)
+                
+                # Check for new performance keys inside existing config
+                perf_defaults = {
+                    "profile": "balanced",
+                    "encoder": "auto",
+                    "codec": "h264",
+                    "detection_engine": config.get("face_tracking_mode", "hybrid_auto"),
+                    "detection_interval": 10,
+                    "prefer_gpu": config.get("gpu_acceleration", {}).get("enabled", True),
+                    "fallback_to_cpu": True,
+                    "decode_enabled": True,
+                    "test_encoder": False,
+                    "yolo_model_path": "",
+                    "allow_yolo_download": False
+                }
+                changed = False
+                for key, value in perf_defaults.items():
+                    if key not in config["performance"]:
+                        config["performance"][key] = value
+                        changed = True
+                if changed:
+                    self.save_config(config)
                 
                 return config
         
@@ -113,7 +160,23 @@ class ConfigManager:
                 "secret_key": ""
             },
             "gpu_acceleration": {
-                "enabled": False
+                "enabled": False,
+                "cached_encoder": None,
+                "cached_gpu_name": None,
+                "cache_timestamp": None
+            },
+            "performance": {
+                "profile": "balanced",
+                "encoder": "auto",
+                "codec": "h264",
+                "detection_engine": "hybrid_auto",
+                "detection_interval": 10,
+                "prefer_gpu": False,
+                "fallback_to_cpu": True,
+                "decode_enabled": True,
+                "test_encoder": False,
+                "yolo_model_path": "",
+                "allow_yolo_download": False
             }
         }
         self.save_config(config)

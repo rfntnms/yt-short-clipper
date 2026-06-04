@@ -810,6 +810,7 @@ class YTShortClipperApp(ctk.CTk):
                 
                 # Import here to avoid circular dependency
                 from clipper_core import AutoClipperCore
+                from services.download_service import DownloadService
                 
                 # Get available subtitles (pass cookies_path)
                 debug_log(f"Fetching subtitles for: {url}")
@@ -819,7 +820,7 @@ class YTShortClipperApp(ctk.CTk):
                 cookies_str = str(self.cookies_path) if self.cookies_path.exists() else None
                 debug_log(f"Passing cookies_path: {cookies_str}")
                 
-                result = AutoClipperCore.get_available_subtitles(
+                result = DownloadService.get_available_subtitles(
                     url, 
                     self.ytdlp_path, 
                     cookies_path=cookies_str
@@ -1072,9 +1073,10 @@ class YTShortClipperApp(ctk.CTk):
                         pass
                     
                 except Exception as e:
-                    self.after(0, lambda: self._on_validation_failed(
+                    err_msg = str(e)
+                    self.after(0, lambda err=err_msg: self._on_validation_failed(
                         f"Highlight Finder API validation failed!\n\n" +
-                        f"Error: {str(e)[:100]}\n\n" +
+                        f"Error: {err[:100]}\n\n" +
                         "Please check your configuration in:\n" +
                         "Settings → AI API Settings → Highlight Finder"))
                     return
@@ -1183,6 +1185,7 @@ class YTShortClipperApp(ctk.CTk):
                 mediapipe_settings=mediapipe_settings,
                 ai_providers=self.config.get("ai_providers"),
                 subtitle_language=subtitle_lang,
+                performance_settings=self.config.get("performance", {}),
                 log_callback=log_with_debug,
                 progress_callback=lambda s, p: self.after(0, lambda: self.update_progress(s, p)),
                 token_callback=lambda a, b, c, d: self.after(0, lambda: self.update_tokens(a, b, c, d)),
@@ -1302,6 +1305,7 @@ class YTShortClipperApp(ctk.CTk):
                 system_prompt=system_prompt,
                 ai_providers=self.config.get("ai_providers"),
                 subtitle_language=subtitle_lang,
+                performance_settings=self.config.get("performance", {}),
                 log_callback=log_with_debug,
                 progress_callback=lambda s, p: self.after(0, lambda: self.update_progress(s, p)),
                 token_callback=lambda a, b, c, d: self.after(0, lambda: self.update_tokens(a, b, c, d)),
@@ -1562,6 +1566,7 @@ class YTShortClipperApp(ctk.CTk):
                 mediapipe_settings=mediapipe_settings,
                 ai_providers=self.config.get("ai_providers"),
                 subtitle_language="id",  # Already downloaded
+                performance_settings=self.config.get("performance", {}),
                 log_callback=log_with_debug,
                 progress_callback=lambda s, p: self.after(0, lambda: self.update_clipping_progress(s, p)),
                 token_callback=lambda a, b, c, d: None,  # No token tracking for clipping

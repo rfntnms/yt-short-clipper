@@ -13,28 +13,7 @@ from pathlib import Path
 from datetime import datetime
 
 
-def _log_to_file(msg):
-    """Write log directly to error.log file"""
-    try:
-        # Get app directory
-        if getattr(sys, 'frozen', False):
-            app_dir = Path(sys.executable).parent
-        else:
-            app_dir = Path(__file__).parent.parent
-        
-        log_file = app_dir / "error.log"
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(f"[{timestamp}] [DOWNLOAD] {msg}\n")
-    except:
-        pass
-
-
-def debug_log(msg):
-    """Log message to both console and file"""
-    print(f"[DEBUG] {msg}")
-    _log_to_file(msg)
+from utils.logger import debug_log
 
 
 def get_os_info():

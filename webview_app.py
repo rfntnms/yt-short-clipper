@@ -148,6 +148,7 @@ class WebAPI:
             mediapipe_settings=mediapipe_settings,
             ai_providers=ai_providers,
             subtitle_language=subtitle_lang,
+            performance_settings=cfg.get("performance", {}),
             log_callback=log_cb,
             progress_callback=lambda s, p=None: progress_cb(p if p is not None else 0.0),
         )
