@@ -393,7 +393,7 @@ class GPUDetector:
         self._ffmpeg_encoders = []
         return []
 
-    def get_decode_args(self, use_gpu: bool = True) -> list:
+    def get_decode_args(self, use_gpu: bool = True, output_format: bool = False) -> list:
         """
         Get FFmpeg hardware decode arguments based on the detected GPU.
         
@@ -410,7 +410,10 @@ class GPUDetector:
         gpu_type = gpu.get('type')
         
         if gpu_type == 'nvidia':
-            return ['-hwaccel', 'cuda']
+            args = ['-hwaccel', 'cuda']
+            if output_format:
+                args.extend(['-hwaccel_output_format', 'cuda'])
+            return args
         elif gpu_type == 'intel':
             return ['-hwaccel', 'qsv']
         elif gpu_type == 'amd':

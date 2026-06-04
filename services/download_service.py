@@ -3,6 +3,7 @@ import json
 import subprocess
 import time
 import re
+import shlex
 from utils.logger import debug_log
 from pathlib import Path
 from utils.helpers import ensure_binaries_in_path, get_ffmpeg_path, get_deno_path, parse_timestamp
@@ -14,6 +15,22 @@ except ImportError:
     YTDLP_MODULE_AVAILABLE = False
 
 SUBPROCESS_FLAGS = 0x08000000 if os.name == "nt" else 0
+
+
+class _SectionYtdlpLogger:
+    """Filter yt-dlp verbose output down to FFmpeg command diagnostics."""
+    def debug(self, msg):
+        text = str(msg)
+        lowered = text.lower()
+        if "ffmpeg" in lowered and ("command" in lowered or "execut" in lowered or "ffmpeg_i" in lowered):
+            debug_log(f"  yt-dlp: {text}")
+
+    def warning(self, msg):
+        debug_log(f"  yt-dlp warning: {msg}")
+
+    def error(self, msg):
+        debug_log(f"  yt-dlp error: {msg}")
+
 
 class DownloadService:
     def __init__(self, temp_dir: Path, output_dir: Path, cookies_file: str, subtitle_language: str, ytdlp_path: str, log_callback, progress_callback, is_cancelled_callback, youtube_api_key: str = "", performance_settings: dict = None):
@@ -30,6 +47,98 @@ class DownloadService:
 
     def should_use_gpu(self) -> bool:
         return bool(self.performance_settings.get("prefer_gpu", False))
+
+    def _format_cmd(self, cmd: list) -> str:
+        """Format a command for logs without executing through a shell."""
+        return " ".join(shlex.quote(str(part)) for part in cmd)
+
+    def _extract_video_encoder(self, args: list) -> str:
+        for idx, token in enumerate(args[:-1]):
+            if token == "-c:v":
+                return args[idx + 1]
+        return ""
+
+    def _section_filter_status(self) -> tuple[bool, list]:
+        """Section download is a simple trim/re-encode path with no explicit filters here."""
+        filters = []
+        return False, filters
+
+    def _get_section_ffmpeg_args(self, ffmpeg_path: str) -> dict:
+        """Build and log the FFmpeg decode/encode plan used by yt-dlp section downloads."""
+        plan = {
+            "decode_args": [],
+            "encoder_args": [],
+            "encoder": "",
+            "decoder": "none",
+            "gpu_decode": False,
+            "gpu_encode": False,
+            "cpu_filters": False,
+            "filters": [],
+            "fallback_reason": "",
+        }
+
+        if not self.should_use_gpu():
+            plan["fallback_reason"] = "GPU disabled in performance settings"
+            debug_log("  Section download: CPU fallback active (GPU disabled)")
+            return plan
+
+        from utils.gpu_detector import GPUDetector
+        detector = GPUDetector(ffmpeg_path)
+        gpu_info = detector.detect_gpu()
+        encoder_args = detector.get_encoder_args(
+            use_gpu=True,
+            preferred_codec=self.performance_settings.get("codec", "h264"),
+            encoder=self.performance_settings.get("encoder", "auto")
+        )
+        encoder = self._extract_video_encoder(encoder_args)
+
+        if encoder in ("libx264", "libx265", ""):
+            plan["fallback_reason"] = "No compatible GPU encoder available"
+            debug_log(f"  Section download: CPU fallback active ({plan['fallback_reason']})")
+            return plan
+
+        cpu_filters, filters = self._section_filter_status()
+        decode_enabled = self.performance_settings.get("decode_enabled", True)
+        # Do not force CUDA frame output for yt-dlp section downloads. The
+        # generated command merges video+audio and has no explicit GPU filter
+        # graph; keeping frames in CUDA surfaces can fail even though NVENC is
+        # available. Plain "-hwaccel cuda" still enables NVIDIA hardware decode.
+        output_format = False
+        decode_args = detector.get_decode_args(use_gpu=decode_enabled, output_format=output_format)
+
+        plan.update({
+            "decode_args": decode_args,
+            "encoder_args": encoder_args,
+            "encoder": encoder,
+            "decoder": " ".join(decode_args) if decode_args else "none",
+            "gpu_decode": bool(decode_args),
+            "gpu_encode": encoder not in ("libx264", "libx265"),
+            "cpu_filters": cpu_filters,
+            "filters": filters,
+        })
+
+        if plan["gpu_decode"] and plan["gpu_encode"]:
+            mode = "GPU decode+encode active"
+        elif plan["gpu_encode"]:
+            mode = "GPU encode active"
+        elif plan["gpu_decode"]:
+            mode = "GPU decode active"
+        else:
+            mode = "CPU fallback active"
+
+        if cpu_filters and plan["gpu_encode"]:
+            mode = "GPU encode active, CPU filters active"
+
+        debug_log(f"  Section download GPU plan: {mode}")
+        debug_log(f"    encoder selected: {encoder}")
+        debug_log(f"    decoder hwaccel selected: {plan['decoder']}")
+        debug_log(f"    filter chain GPU-compatible: {not cpu_filters}")
+        debug_log(f"    CPU filters active: {cpu_filters} ({', '.join(filters) if filters else 'none'})")
+        if gpu_info.get("type") == "nvidia" and decode_args and not output_format:
+            debug_log("    fallback reason: CUDA output surfaces disabled for yt-dlp multi-input section command")
+        debug_log(f"    ffmpeg_i args: {decode_args if decode_args else 'none'}")
+        debug_log(f"    ffmpeg_o args: {encoder_args if encoder_args else 'none'}")
+        return plan
 
     def log(self, msg: str):
         if self.log_callback:
@@ -1083,6 +1192,8 @@ class DownloadService:
             'progress_hooks': [progress_hook],
             'quiet': True,
             'no_warnings': False,
+            'verbose': True,
+            'logger': _SectionYtdlpLogger(),
             'download_ranges': yt_dlp.utils.download_range_func(None, [(
                 parse_timestamp(start_time),
                 parse_timestamp(end_time)
@@ -1099,24 +1210,16 @@ class DownloadService:
         if ffmpeg_path and Path(ffmpeg_path).exists():
             ydl_opts['ffmpeg_location'] = str(Path(ffmpeg_path).parent)
             
-            # Check for GPU acceleration
-            if self.should_use_gpu():
-                from utils.gpu_detector import GPUDetector
-                detector = GPUDetector(ffmpeg_path)
-                encoder_args = detector.get_encoder_args(
-                    use_gpu=True,
-                    preferred_codec=self.performance_settings.get("codec", "h264"),
-                    encoder=self.performance_settings.get("encoder", "auto")
-                )
-                decode_args = detector.get_decode_args(use_gpu=self.performance_settings.get("decode_enabled", True))
-                if encoder_args:
-                    ydl_opts['downloader_args'] = {
-                        'ffmpeg_i': decode_args,
-                        'ffmpeg_o': encoder_args
-                    }
-                    debug_log(f"  Using GPU (decode+encode) for section download: {encoder_args}")
-            else:
-                debug_log("  Section download using CPU FFmpeg settings")
+            plan = self._get_section_ffmpeg_args(ffmpeg_path)
+            if plan["encoder_args"]:
+                ydl_opts['external_downloader_args'] = {
+                    'ffmpeg_i1': plan["decode_args"],
+                    'ffmpeg_o': plan["encoder_args"]
+                }
+            debug_log("  yt-dlp section params:")
+            debug_log(f"    download section: {start_time} -> {end_time}")
+            debug_log(f"    ffmpeg_location: {ydl_opts.get('ffmpeg_location')}")
+            debug_log(f"    external_downloader_args: {ydl_opts.get('external_downloader_args', 'none')}")
         
         # Add cookies
         from utils.helpers import get_app_dir
@@ -1183,26 +1286,14 @@ class DownloadService:
         ]
         
         # Check for GPU acceleration
-        if self.should_use_gpu():
-            from utils.gpu_detector import GPUDetector
-            detector = GPUDetector(get_ffmpeg_path() or "ffmpeg")
-            encoder_args = detector.get_encoder_args(
-                use_gpu=True,
-                preferred_codec=self.performance_settings.get("codec", "h264"),
-                encoder=self.performance_settings.get("encoder", "auto")
-            )
-            decode_args = detector.get_decode_args(use_gpu=self.performance_settings.get("decode_enabled", True))
-            
-            if encoder_args:
-                decode_str = " ".join(decode_args)
-                encode_str = " ".join(encoder_args)
-                cmd.extend([
-                    "--downloader-args", f"ffmpeg_i:{decode_str}",
-                    "--downloader-args", f"ffmpeg_o:{encode_str}"
-                ])
-                debug_log(f"  Using GPU (decode+encode) for section download: {encoder_args}")
-        else:
-            debug_log("  Section download using CPU FFmpeg settings")
+        ffmpeg_path = get_ffmpeg_path() or "ffmpeg"
+        plan = self._get_section_ffmpeg_args(ffmpeg_path)
+        if plan["encoder_args"]:
+            decode_str = " ".join(plan["decode_args"])
+            encode_str = " ".join(plan["encoder_args"])
+            if decode_str:
+                cmd.extend(["--downloader-args", f"ffmpeg_i1:{decode_str}"])
+            cmd.extend(["--downloader-args", f"ffmpeg_o:{encode_str}"])
             
         cmd.extend(["-o", output_path])
         
@@ -1220,7 +1311,7 @@ class DownloadService:
         
         cmd.append(url)
         
-        debug_log(f"  Running: {' '.join(cmd[:6])}...")
+        debug_log(f"  Full yt-dlp section command: {self._format_cmd(cmd)}")
         
         process = subprocess.Popen(
             cmd,
