@@ -6,6 +6,8 @@ import json
 import uuid
 from pathlib import Path
 
+from config.ai_provider_config import DEFAULT_HIGHLIGHT_PROMPT
+
 
 class ConfigManager:
     """Manages application configuration"""
@@ -27,8 +29,7 @@ class ConfigManager:
                 
                 # Add default system_prompt if not exists
                 if "system_prompt" not in config:
-                    from clipper_core import AutoClipperCore
-                    config["system_prompt"] = AutoClipperCore.get_default_prompt()
+                    config["system_prompt"] = DEFAULT_HIGHLIGHT_PROMPT
                 # Add default temperature if not exists
                 if "temperature" not in config:
                     config["temperature"] = 1.0
@@ -82,7 +83,6 @@ class ConfigManager:
                 return config
         
         # Default config with system prompt
-        from clipper_core import AutoClipperCore
         config = {
             "api_key": "",  # Kept for backward compatibility
             "base_url": "https://api.openai.com/v1",  # Kept for backward compatibility
@@ -90,7 +90,7 @@ class ConfigManager:
             "tts_model": "tts-1",  # Kept for backward compatibility
             "temperature": 1.0,
             "output_dir": str(self.output_dir),
-            "system_prompt": AutoClipperCore.get_default_prompt(),
+            "system_prompt": DEFAULT_HIGHLIGHT_PROMPT,
             "installation_id": str(uuid.uuid4()),
             "ai_providers": self._get_default_ai_providers(),
             "watermark": {

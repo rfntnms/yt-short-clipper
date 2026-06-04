@@ -1,6 +1,12 @@
 """
 AI Provider Configuration
-Contains base URLs and default models for various AI providers
+Contains base URLs, default models, and capability registry for all AI providers.
+
+Key constants:
+  AI_PROVIDERS_CONFIG   — full registry of providers (name, url, models, etc.)
+  SPECIALIZED_MODELS    — per-task model suggestions per provider
+  PROVIDER_CAPABILITIES — which task types each provider supports
+  DEFAULT_HIGHLIGHT_PROMPT — default system prompt for highlight detection
 """
 
 AI_PROVIDERS_CONFIG = {
@@ -105,6 +111,41 @@ AI_PROVIDERS_CONFIG = {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Provider capability registry
+# Indicates which AI task types each provider can serve.
+# This drives UI filtering: e.g., caption_maker only shows whisper-capable
+# providers; hook_maker only shows tts-capable providers.
+# ---------------------------------------------------------------------------
+PROVIDER_CAPABILITIES = {
+    "ytclip":      {"chat": True,  "whisper": True,  "tts": True},
+    "openai":      {"chat": True,  "whisper": True,  "tts": True},
+    "google":      {"chat": True,  "whisper": False, "tts": False},
+    "groq":        {"chat": True,  "whisper": True,  "tts": False},
+    "anthropic":   {"chat": True,  "whisper": False, "tts": False},
+    "cohere":      {"chat": True,  "whisper": False, "tts": False},
+    "mistral":     {"chat": True,  "whisper": False, "tts": False},
+    "huggingface": {"chat": True,  "whisper": False, "tts": False},
+    "together":    {"chat": True,  "whisper": False, "tts": False},
+    "replicate":   {"chat": True,  "whisper": False, "tts": False},
+    "custom":      {"chat": True,  "whisper": True,  "tts": True},
+}
+
+# Mapping from base URL substring to provider key — used to resolve saved
+# base_url values back to a provider key in the settings UI.
+URL_TO_PROVIDER_KEY = {
+    "ai-api.ytclip.org": "ytclip",
+    "openai.com":        "openai",
+    "googleapis.com":    "google",
+    "groq.com":          "groq",
+    "anthropic.com":     "anthropic",
+    "cohere.ai":         "cohere",
+    "mistral.ai":        "mistral",
+    "huggingface.co":    "huggingface",
+    "together.xyz":      "together",
+    "replicate.com":     "replicate",
+}
+
 # Models for specific use cases
 SPECIALIZED_MODELS = {
     "highlight_finder": {
@@ -136,6 +177,199 @@ SPECIALIZED_MODELS = {
         "anthropic": ["claude-3-5-sonnet-20241022"],
     }
 }
+
+# ---------------------------------------------------------------------------
+# Default system prompt for Highlight Finder
+# Kept here (config/) so that config_manager.py and pages/ can import it
+# without touching clipper_core.py — eliminates the circular import.
+# clipper_core.AutoClipperCore.get_default_prompt() returns this same string
+# for backward compatibility.
+# ---------------------------------------------------------------------------
+DEFAULT_HIGHLIGHT_PROMPT = """Kamu adalah EDITOR SHORT-FORM TIER A untuk konten PODCAST viral (TikTok / Reels / Shorts).
+
+OUTPUT ANDA AKAN LANGSUNG DIGUNAKAN UNTUK PRODUKSI.
+Kesalahan durasi atau format = GAGAL TOTAL.
+
+==================================================
+TUGAS UTAMA (NON-NEGOTIABLE)
+============================
+
+Dari transcript di bawah, HASILKAN TEPAT {num_clips} segment.
+
+* TIDAK BOLEH kurang.
+* TIDAK BOLEH lebih.
+* ARRAY KOSONG DILARANG DALAM KONDISI APAPUN.
+
+Jika kesulitan menemukan segmen bagus, WAJIB tetap menghasilkan {num_clips} dengan strategi penggabungan/perpanjangan.
+
+==================================================
+PRINSIP PEMILIHAN CLIP (WAJIB DIPRIORITASKAN)
+=============================================
+
+Prioritaskan segmen dengan karakteristik berikut:
+
+1. Ada KONFLIK, ketegangan, kontroversi.
+2. Ada PENGAKUAN personal / vulnerability.
+3. Ada STATEMENT tajam / opini berani.
+4. Ada punchline atau momen lucu kuat.
+5. Ada cerita lengkap (setup → buildup → payoff).
+6. Ada kalimat yang bisa berdiri sendiri sebagai hook viral.
+
+Hindari:
+
+* Obrolan filler
+* Basa-basi
+* Transisi topik tanpa payoff
+* Penjelasan teknis panjang tanpa emosi
+
+Jika harus memilih, utamakan EMOSI & KONFLIK dibanding edukasi netral.
+
+==================================================
+ATURAN DURASI (KRITIS – TIDAK BOLEH DILANGGAR)
+==============================================
+
+* Setiap clip HARUS 60–120 detik.
+* Target ideal: 85–95 detik.
+* Hitung durasi dari timestamp transcript.
+* JANGAN estimasi berdasarkan panjang teks.
+
+Jika durasi < 60 detik:
+→ PERPANJANG dengan konteks sebelum atau sesudahnya.
+
+Jika durasi > 120 detik:
+→ Pangkas bagian yang tidak relevan TANPA merusak alur cerita.
+
+==================================================
+STRATEGI WAJIB JIKA SEGMENT IDEAL TIDAK ADA
+===========================================
+
+Lakukan salah satu atau kombinasi berikut:
+
+1. Gabungkan beberapa bagian berurutan yang masih satu topik.
+2. Tambahkan setup sebelum punchline agar dramatis.
+3. Tambahkan payoff setelah cerita agar terasa lengkap.
+4. Pangkas filler tapi jaga minimal 60 detik.
+
+DILARANG:
+
+* Menghasilkan clip < 60 detik
+* Mengurangi jumlah clip
+* Mengabaikan timestamp asli
+* Mengarang timestamp
+
+==================================================
+STRUKTUR NARATIF YANG DIWAJIBKAN
+================================
+
+Setiap clip harus terasa seperti mini-story:
+
+• Awal: Setup / pernyataan pemicu
+• Tengah: Konflik / insight / cerita
+• Akhir: Punchline / payoff / statement kuat
+
+Jika tidak ada payoff, tambahkan konteks hingga ada.
+
+==================================================
+FIELD WAJIB (PERSIS 6 FIELD – TIDAK BOLEH LEBIH/KURANG)
+=======================================================
+
+Setiap object HARUS memiliki:
+
+1. "start_time" (string) → Format: "HH:MM:SS,mmm"
+2. "end_time" (string) → Format: "HH:MM:SS,mmm"
+3. "title" (string) → Maks 60 karakter, padat & click-worthy
+4. "description" (string) → Maks 150 karakter, jelaskan kenapa viral
+5. "virality_score" (integer) → 1–10 (HARUS ANGKA, BUKAN STRING)
+6. "hook_text" (string) → Maks 15 kata
+
+DILARANG:
+
+* Field tambahan
+* Field "reason"
+* virality_score dalam bentuk string
+* Komentar atau teks di luar JSON
+
+==================================================
+VIRALITY SCORE (WAJIB OBJEKTIF)
+===============================
+
+8–10:
+
+* Kontroversial
+* Emosional kuat
+* Confession pribadi
+* Statement berani
+* Punchline keras
+
+5–7:
+
+* Insight menarik
+* Cerita cukup engaging
+* Momen lucu ringan
+
+1–4:
+
+* Informasi biasa
+* Tidak ada emosi
+* Tidak ada hook kuat
+
+Jangan kasih semua clip skor tinggi.
+Nilai dengan rasional.
+
+==================================================
+HOOK TEXT (HARUS TAJAM & MENJUAL)
+=================================
+
+WAJIB:
+
+* Maksimal 15 kata
+* Bahasa Indonesia casual
+* TANPA emoji
+* WAJIB menyebut NAMA ORANG yang berbicara
+* Harus berupa kutipan, statement tajam, atau punchline
+
+Contoh benar:
+"Andre Taulany: Gua hampir bangkrut gara-gara ini"
+"Deddy Corbuzier: Banyak podcaster cuma pura-pura sukses"
+
+Hook harus bisa berdiri sendiri sebagai headline viral.
+
+==================================================
+SELF-VALIDATION (WAJIB SEBELUM RETURN)
+======================================
+
+Periksa:
+
+1. Jumlah segment = {num_clips} ?
+2. Semua durasi 60–120 detik ?
+3. Semua punya tepat 6 field ?
+4. virality_score berupa integer 1–10 ?
+5. Tidak ada field lain ?
+6. Tidak ada teks di luar JSON ?
+
+Jika ada kesalahan → PERBAIKI sebelum output.
+
+==================================================
+OUTPUT FORMAT (STRICT)
+======================
+
+Return HANYA JSON array.
+Tanpa markdown.
+Tanpa penjelasan.
+Tanpa komentar.
+
+Format EXACT seperti ini:
+
+[{"start_time":"HH:MM:SS,mmm","end_time":"HH:MM:SS,mmm","title":"...","description":"...","virality_score":8,"hook_text":"..."}]
+
+==================================================
+KONTEN
+======
+
+{video_context}
+
+Transcript:
+{transcript}"""
 
 
 def get_provider_name(provider_key: str) -> str:
@@ -193,3 +427,66 @@ def get_provider_docs_url(provider_key: str) -> str:
 def get_specialized_models(task: str, provider_key: str) -> list:
     """Get specialized models for a specific task and provider"""
     return SPECIALIZED_MODELS.get(task, {}).get(provider_key, [])
+
+
+def get_provider_capabilities(provider_key: str) -> dict:
+    """Get capability dict for a provider.
+
+    Returns:
+        dict with keys: 'chat', 'whisper', 'tts' (all bool)
+    """
+    default = {"chat": True, "whisper": False, "tts": False}
+    return PROVIDER_CAPABILITIES.get(provider_key, default)
+
+
+def provider_supports_task(provider_key: str, task_key: str) -> bool:
+    """Check if a provider can be used for a given AI task.
+
+    task_key maps to capability type:
+      highlight_finder  → 'chat'
+      youtube_title_maker → 'chat'
+      caption_maker     → 'whisper'
+      hook_maker        → 'tts'
+    """
+    TASK_TO_CAPABILITY = {
+        "highlight_finder":    "chat",
+        "youtube_title_maker": "chat",
+        "caption_maker":       "whisper",
+        "hook_maker":          "tts",
+    }
+    capability = TASK_TO_CAPABILITY.get(task_key, "chat")
+    return get_provider_capabilities(provider_key).get(capability, False)
+
+
+def get_providers_for_task(task_key: str) -> list:
+    """Return list of (display_name, provider_key) tuples that support the given task.
+
+    YTClip AI is always first; Custom is always last.
+    """
+    result = []
+    # YTClip always first
+    if provider_supports_task("ytclip", task_key):
+        result.append((AI_PROVIDERS_CONFIG["ytclip"]["name"], "ytclip"))
+    # Middle providers sorted alphabetically
+    for key in sorted(AI_PROVIDERS_CONFIG.keys()):
+        if key in ("ytclip", "custom"):
+            continue
+        if provider_supports_task(key, task_key):
+            result.append((AI_PROVIDERS_CONFIG[key]["name"], key))
+    # Custom always last
+    if provider_supports_task("custom", task_key):
+        result.append((AI_PROVIDERS_CONFIG["custom"]["name"], "custom"))
+    return result
+
+
+def resolve_provider_key_from_url(base_url: str) -> str:
+    """Guess the provider key from a saved base_url string.
+
+    Returns 'custom' when no known provider matches.
+    """
+    if not base_url:
+        return "custom"
+    for fragment, key in URL_TO_PROVIDER_KEY.items():
+        if fragment in base_url:
+            return key
+    return "custom"
