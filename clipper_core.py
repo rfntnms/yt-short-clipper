@@ -1151,6 +1151,111 @@ class AutoClipperCore:
         )
         self.log(done_message)
 
+    def _run_portrait_clip_step(self, landscape_file: Path, portrait_file: Path, current_step: int, clip_progress):
+        clip_progress("Converting to portrait...", current_step, 0)
+        self.convert_to_portrait_with_progress(
+            str(landscape_file),
+            str(portrait_file),
+            lambda p: clip_progress("Converting to portrait...", current_step, p),
+        )
+        self.log("  ✓ Portrait conversion")
+
+    def _run_hook_clip_step(self, current_output: Path, clip_dir: Path, highlight: dict, current_step: int, clip_progress):
+        clip_progress("Adding hook...", current_step, 0)
+        hooked_file = clip_dir / "temp_hooked.mp4"
+        hook_text = highlight.get("hook_text", highlight["title"])
+        self.log("  Generating and adding hook...")
+        hook_duration = self.add_hook(
+            str(current_output),
+            hook_text,
+            str(hooked_file),
+            lambda p: clip_progress("Adding hook...", current_step, p),
+        )
+
+        if not hooked_file.exists():
+            raise Exception(f"Failed to create hooked video: {hooked_file}")
+
+        self.log(f"  ✓ Added hook ({hook_duration:.1f}s)")
+        return hooked_file, hook_duration
+
+    def _run_caption_clip_step(
+        self,
+        current_output: Path,
+        portrait_file: Path,
+        final_file: Path,
+        clip_dir: Path,
+        add_hook: bool,
+        hook_duration: float,
+        current_step: int,
+        clip_progress,
+    ):
+        clip_progress("Adding captions...", current_step, 0)
+        audio_source = str(portrait_file) if add_hook else None
+
+        if self.watermark_settings.get("enabled"):
+            temp_captioned = clip_dir / "temp_captioned.mp4"
+            output_path = temp_captioned
+        else:
+            output_path = final_file
+
+        self.add_captions_api_with_progress(
+            str(current_output),
+            str(output_path),
+            audio_source,
+            hook_duration,
+            lambda p: clip_progress("Adding captions...", current_step, p),
+        )
+
+        if not output_path.exists():
+            if output_path == final_file:
+                raise Exception(f"Failed to create final video: {final_file}")
+            raise Exception(f"Failed to create captioned video: {output_path}")
+
+        self.log("  ✓ Added captions")
+        return output_path
+
+    def _run_watermark_clip_step(self, current_output: Path, final_file: Path, current_step: int, clip_progress):
+        clip_progress("Adding watermark...", current_step, 0)
+        self.add_watermark_with_progress(
+            str(current_output),
+            str(final_file),
+            lambda p: clip_progress("Adding watermark...", current_step, p),
+        )
+
+        if not final_file.exists():
+            raise Exception(f"Failed to create final video with watermark: {final_file}")
+
+        self.log("  ✓ Added watermark")
+        return final_file
+
+    def _ensure_final_without_captions_or_watermark(self, current_output: Path, final_file: Path):
+        import shutil
+        shutil.copy(str(current_output), str(final_file))
+        return final_file
+
+    def _run_credit_clip_step(self, current_output: Path, final_file: Path, clip_dir: Path, current_step: int, clip_progress):
+        import shutil
+
+        clip_progress("Adding credit...", current_step, 0)
+
+        if str(current_output) == str(final_file):
+            temp_credit_input = clip_dir / "temp_before_credit.mp4"
+            shutil.copy(str(final_file), str(temp_credit_input))
+            current_output = temp_credit_input
+
+        self.add_credit_watermark_with_progress(
+            str(current_output),
+            str(final_file),
+            lambda p: clip_progress("Adding credit...", current_step, p),
+        )
+
+        if not final_file.exists():
+            raise Exception(f"Failed to create final video with credit: {final_file}")
+
+        self.log(f"  ✓ Added credit: Source: {self.channel_name}")
+        self._delete_clip_temp_file(clip_dir / "temp_before_credit.mp4", "temp_before_credit.mp4")
+        return final_file
+
     def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
@@ -1183,6 +1288,8 @@ class AutoClipperCore:
         def clip_progress(step_name: str, step_num: int, sub_progress: float = 0):
             self._report_clip_progress(index, total_clips, total_steps, step_name, step_num, sub_progress)
         
+        current_step = 0
+
         # Step 1: Cut video (skip if pre-cut section from --download-sections)
         if self.is_cancelled():
             return
@@ -1206,11 +1313,8 @@ class AutoClipperCore:
         # Step 2: Convert to portrait with progress
         if self.is_cancelled():
             return
-        clip_progress("Converting to portrait...", current_step, 0)
         portrait_file = clip_dir / "temp_portrait.mp4"
-        self.convert_to_portrait_with_progress(str(landscape_file), str(portrait_file), 
-            lambda p: clip_progress("Converting to portrait...", current_step, p))
-        self.log("  ✓ Portrait conversion")
+        self._run_portrait_clip_step(landscape_file, portrait_file, current_step, clip_progress)
         current_step += 1
         
         # Track which file is the current output
@@ -1221,19 +1325,13 @@ class AutoClipperCore:
         if add_hook:
             if self.is_cancelled():
                 return
-            clip_progress("Adding hook...", current_step, 0)
-            hooked_file = clip_dir / "temp_hooked.mp4"
-            hook_text = highlight.get("hook_text", highlight["title"])
-            self.log("  Generating and adding hook...")
-            hook_duration = self.add_hook(str(current_output), hook_text, str(hooked_file), 
-                                          lambda p: clip_progress("Adding hook...", current_step, p))
-            
-            # Verify hooked file was created
-            if not hooked_file.exists():
-                raise Exception(f"Failed to create hooked video: {hooked_file}")
-            
-            self.log(f"  ✓ Added hook ({hook_duration:.1f}s)")
-            current_output = hooked_file
+            current_output, hook_duration = self._run_hook_clip_step(
+                current_output,
+                clip_dir,
+                highlight,
+                current_step,
+                clip_progress,
+            )
             current_step += 1
         else:
             self.log("  ⊘ Skipped hook (disabled)")
@@ -1243,30 +1341,16 @@ class AutoClipperCore:
         if add_captions:
             if self.is_cancelled():
                 return
-            clip_progress("Adding captions...", current_step, 0)
-            
-            # Use portrait_file (without hook) as audio source for transcription
-            audio_source = str(portrait_file) if add_hook else None
-            
-            # If watermark enabled, add captions to temp file first
-            if self.watermark_settings.get("enabled"):
-                temp_captioned = clip_dir / "temp_captioned.mp4"
-                self.add_captions_api_with_progress(str(current_output), str(temp_captioned), audio_source, hook_duration,
-                    lambda p: clip_progress("Adding captions...", current_step, p))
-                
-                if not temp_captioned.exists():
-                    raise Exception(f"Failed to create captioned video: {temp_captioned}")
-                
-                current_output = temp_captioned
-            else:
-                # No watermark, captions go directly to final
-                self.add_captions_api_with_progress(str(current_output), str(final_file), audio_source, hook_duration,
-                    lambda p: clip_progress("Adding captions...", current_step, p))
-                
-                if not final_file.exists():
-                    raise Exception(f"Failed to create final video: {final_file}")
-            
-            self.log("  ✓ Added captions")
+            current_output = self._run_caption_clip_step(
+                current_output,
+                portrait_file,
+                final_file,
+                clip_dir,
+                add_hook,
+                hook_duration,
+                current_step,
+                clip_progress,
+            )
             current_step += 1
         else:
             self.log("  ⊘ Skipped captions (disabled)")
@@ -1281,17 +1365,7 @@ class AutoClipperCore:
                 # Watermark is a new step
                 total_steps += 1
             
-            clip_progress("Adding watermark...", current_step, 0)
-            
-            # Apply watermark to current output
-            self.add_watermark_with_progress(str(current_output), str(final_file),
-                lambda p: clip_progress("Adding watermark...", current_step, p))
-            
-            if not final_file.exists():
-                raise Exception(f"Failed to create final video with watermark: {final_file}")
-            
-            self.log("  ✓ Added watermark")
-            current_output = final_file
+            current_output = self._run_watermark_clip_step(current_output, final_file, current_step, clip_progress)
             current_step += 1
             
             # Cleanup temp captioned file if exists
@@ -1299,9 +1373,7 @@ class AutoClipperCore:
                 self._delete_clip_temp_file(clip_dir / "temp_captioned.mp4", "temp_captioned.mp4")
         elif not add_captions:
             # No captions and no watermark, just copy current output to final
-            import shutil
-            shutil.copy(str(current_output), str(final_file))
-            current_output = final_file
+            current_output = self._ensure_final_without_captions_or_watermark(current_output, final_file)
         
         # Step 6: Add credit watermark (if enabled)
         if self.credit_watermark_settings.get("enabled") and self.channel_name:
@@ -1309,26 +1381,14 @@ class AutoClipperCore:
                 return
             
             total_steps += 1
-            clip_progress("Adding credit...", current_step, 0)
-            
-            # If current_output is already final_file, we need a temp file
-            if str(current_output) == str(final_file):
-                temp_credit_input = clip_dir / "temp_before_credit.mp4"
-                import shutil
-                shutil.copy(str(final_file), str(temp_credit_input))
-                current_output = temp_credit_input
-            
-            self.add_credit_watermark_with_progress(str(current_output), str(final_file),
-                lambda p: clip_progress("Adding credit...", current_step, p))
-            
-            if not final_file.exists():
-                raise Exception(f"Failed to create final video with credit: {final_file}")
-            
-            self.log(f"  ✓ Added credit: Source: {self.channel_name}")
+            current_output = self._run_credit_clip_step(
+                current_output,
+                final_file,
+                clip_dir,
+                current_step,
+                clip_progress,
+            )
             current_step += 1
-            
-            # Cleanup temp file
-            self._delete_clip_temp_file(clip_dir / "temp_before_credit.mp4", "temp_before_credit.mp4")
         
         # Mark complete
         clip_progress("Done", total_steps, 0)

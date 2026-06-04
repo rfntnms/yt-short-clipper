@@ -24,6 +24,8 @@ class AutoClipperCoreHelperParityTests(unittest.TestCase):
         core.ffmpeg_path = "ffmpeg"
         core.get_hwaccel_args = lambda: ["-hwaccel", "auto"]
         core.get_video_encoder_args = lambda: ["-c:v", "libx264", "-preset", "fast"]
+        core.report_tokens = lambda *_args: None
+        core.log_ffmpeg_command = lambda *_args: None
         return core
 
     def test_clip_total_steps_preserves_existing_options(self):

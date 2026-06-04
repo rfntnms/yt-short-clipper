@@ -1,4 +1,6 @@
 # Desktop App Dependencies
+# Tkinter/_tkinter must be available in the Python runtime for the GUI.
+# It is not installed by pip; use a Python build that includes Tk support.
 customtkinter>=5.2.0
 openai>=1.0.0
 opencv-python>=4.8.0
@@ -8,11 +10,12 @@ mediapipe>=0.10.0
 requests>=2.31.0
 yt-dlp>=2026.3.17
 curl-cffi>=0.14.0
+certifi>=2024.0.0
 
 # YouTube Upload
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 
-# Optional: Fast GPU Portrait Detection (YOLO)
-# ultralytics>=8.1.0
+# Optional: Fast GPU Portrait Detection (YOLO; pulls torch/torchvision)
+ultralytics>=8.1.0

@@ -10,7 +10,7 @@ This document tracks the behavior-preserving refactor work so future passes can 
 - `ConfigManager.load()` split into default-shape and normalization helpers while keeping `load/get/set/save` stable.
 - `DownloadService` now uses shared helpers for yt-dlp module selection, format selection, cookies lookup, JS runtime options, FFmpeg options, and downloaded subtitle discovery.
 - `AutoClipperCore.add_captions_api(...)` delegates to the progress-aware caption path to remove a duplicate workflow while keeping the public method.
-- The first `process_clip(...)` FFmpeg step was extracted into landscape command and runner helpers.
+- `process_clip(...)` now delegates cut/re-encode, portrait, hook, caption, watermark, final-copy, and credit steps to private helpers.
 - Update-check request parsing and version comparison moved to `services/update_service.py`.
 - Clearly unused imports were removed from high-risk modules.
 
@@ -19,14 +19,13 @@ This document tracks the behavior-preserving refactor work so future passes can 
 - Config migration coverage for legacy single-provider config, current multi-provider config, missing performance config, and unknown custom keys.
 - Download helper coverage for format selector, Deno options, cookies lookup, and subtitle fallback discovery.
 - Clip command coverage for full-video cut versus pre-cut section re-encode shapes.
+- Caption fallback coverage for audio extraction failure, tiny audio, Whisper failure, and mocked caption-burn success.
 - Update helper coverage for version comparison and update URL shape.
 
 ## Remaining Refactor Passes
 
-- Further split `process_clip(...)` into portrait, hook, captions/watermark, credit, cleanup, and metadata steps.
 - Consolidate old direct portrait methods only after fixture-video parity checks exist; their legacy OpenCV/MediaPipe behavior may differ from the active progress route.
 - Extract app subtitle loading, thumbnail loading, processing runner construction, and session resume orchestration from `app.py`.
-- Add mocked FFmpeg/Whisper tests for caption fallback behavior.
 - Add fixture-video tests for portrait output dimensions, duration, and audio presence.
 - Refresh README architecture once the remaining app and clipper extractions land.
 
