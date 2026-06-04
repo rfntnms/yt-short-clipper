@@ -2,6 +2,7 @@ import sys
 import tempfile
 import types
 import unittest
+import importlib.util
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,20 +10,24 @@ from unittest.mock import patch
 
 
 def install_fake_video_dependencies():
-    cv2 = types.ModuleType("cv2")
-    cv2.__spec__ = ModuleSpec("cv2", loader=None)
-    numpy = types.ModuleType("numpy")
-    numpy.__spec__ = ModuleSpec("numpy", loader=None)
-    openai = types.ModuleType("openai")
-    openai.__spec__ = ModuleSpec("openai", loader=None)
-    openai.OpenAI = object
-    openai.APIConnectionError = Exception
-    openai.RateLimitError = Exception
-    openai.APIStatusError = Exception
+    if importlib.util.find_spec("cv2") is None:
+        cv2 = types.ModuleType("cv2")
+        cv2.__spec__ = ModuleSpec("cv2", loader=None)
+        sys.modules.setdefault("cv2", cv2)
 
-    sys.modules.setdefault("cv2", cv2)
-    sys.modules.setdefault("numpy", numpy)
-    sys.modules.setdefault("openai", openai)
+    if importlib.util.find_spec("numpy") is None:
+        numpy = types.ModuleType("numpy")
+        numpy.__spec__ = ModuleSpec("numpy", loader=None)
+        sys.modules.setdefault("numpy", numpy)
+
+    if importlib.util.find_spec("openai") is None:
+        openai = types.ModuleType("openai")
+        openai.__spec__ = ModuleSpec("openai", loader=None)
+        openai.OpenAI = object
+        openai.APIConnectionError = Exception
+        openai.RateLimitError = Exception
+        openai.APIStatusError = Exception
+        sys.modules.setdefault("openai", openai)
 
 
 install_fake_video_dependencies()

@@ -23,6 +23,7 @@ class ConfigManagerParityTests(unittest.TestCase):
             self.assertIn("performance", manager.config)
             self.assertEqual(manager.config["performance"]["profile"], "balanced")
             self.assertEqual(manager.config["performance"]["codec"], "h264")
+            self.assertEqual(manager.config["performance"]["speaker_framing_mode"], "center_speaker")
 
     def test_legacy_single_provider_config_migrates_without_dropping_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,6 +83,7 @@ class ConfigManagerParityTests(unittest.TestCase):
             self.assertEqual(manager.get("system_prompt"), DEFAULT_HIGHLIGHT_PROMPT)
             self.assertEqual(manager.config["performance"]["profile"], "fast")
             self.assertEqual(manager.config["performance"]["codec"], "h264")
+            self.assertEqual(manager.config["performance"]["speaker_framing_mode"], "center_speaker")
             self.assertTrue(manager.config["performance"]["prefer_gpu"])
             self.assertIn("installation_id", manager.config)
 

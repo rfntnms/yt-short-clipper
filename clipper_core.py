@@ -170,6 +170,7 @@ class AutoClipperCore:
             "codec": "h264",
             "detection_engine": self.face_tracking_mode,
             "detection_interval": 10,
+            "speaker_framing_mode": "center_speaker",
             "prefer_gpu": True,
             "fallback_to_cpu": True,
             "decode_enabled": True,
@@ -185,6 +186,8 @@ class AutoClipperCore:
             merged["profile"] = "balanced"
         if merged.get("codec") not in ("h264", "hevc"):
             merged["codec"] = "h264"
+        if merged.get("speaker_framing_mode") not in ("center_speaker", "active_speaker"):
+            merged["speaker_framing_mode"] = "center_speaker"
         if not isinstance(merged.get("detection_interval"), int) or merged["detection_interval"] <= 0:
             merged["detection_interval"] = {"quality": 5, "balanced": 10, "fast": 30}[merged["profile"]]
         return merged
@@ -1573,6 +1576,10 @@ class AutoClipperCore:
         switch_threshold = self.mediapipe_settings.get("switch_threshold", 0.3)
         min_shot_duration = self.mediapipe_settings.get("min_shot_duration", 90)
         center_weight = self.mediapipe_settings.get("center_weight", 0.3)
+        speaker_framing_mode = self.performance_settings.get("speaker_framing_mode", "center_speaker")
+        if speaker_framing_mode == "center_speaker":
+            center_weight = max(center_weight, 0.55)
+            switch_threshold = max(switch_threshold, 0.45)
         
         # First pass: analyze frames with MediaPipe
         self.log("  Pass 1: Analyzing lip movements...")
@@ -2303,6 +2310,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         import time
         self.log(f"  Detection engine: legacy_mediapipe")
         self.log(f"  Detection profile: {self.performance_profile}, interval: every {detection_interval} frames")
+        self.log(f"  Speaker framing: {speaker_framing_mode}")
         
         with self.mp_face_mesh.FaceMesh(
             static_image_mode=False,

@@ -13,6 +13,7 @@ This document tracks the behavior-preserving refactor work so future passes can 
 - `process_clip(...)` now delegates cut/re-encode, portrait, hook, caption, watermark, final-copy, and credit steps to private helpers.
 - Update-check request parsing and version comparison moved to `services/update_service.py`.
 - Clearly unused imports were removed from high-risk modules.
+- Portrait framing now evaluates multiple detections but locks the crop to one centered speaker candidate at a time, avoiding wide multi-person framing while preserving stable tracking.
 
 ## Added Parity Coverage
 
@@ -21,6 +22,7 @@ This document tracks the behavior-preserving refactor work so future passes can 
 - Clip command coverage for full-video cut versus pre-cut section re-encode shapes.
 - Caption fallback coverage for audio extraction failure, tiny audio, Whisper failure, and mocked caption-burn success.
 - Update helper coverage for version comparison and update URL shape.
+- Portrait candidate selection coverage for centered initial selection, stable speaker lock, delayed speaker switching, and invalid framing-mode fallback.
 
 ## Remaining Refactor Passes
 

@@ -13,6 +13,8 @@ class DetectionResult:
     x_center: float
     y_center: Optional[float] = None
     confidence: float = 1.0
+    width: Optional[float] = None
+    height: Optional[float] = None
 
 
 class PortraitDetectionEngine:
@@ -24,6 +26,10 @@ class PortraitDetectionEngine:
     def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
         """Detect subject in frame and return normalized or absolute centers"""
         raise NotImplementedError
+
+    def detect_all(self, frame: np.ndarray, orig_w: int, orig_h: int) -> List[DetectionResult]:
+        result = self.detect(frame, orig_w, orig_h)
+        return [result] if result else []
         
     def release(self):
         """Free resources"""
@@ -43,15 +49,25 @@ class OpenCVFastEngine(PortraitDetectionEngine):
             cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         )
         
-    def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
+    def detect_all(self, frame: np.ndarray, orig_w: int, orig_h: int) -> List[DetectionResult]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(50, 50))
-        
-        if len(faces) > 0:
-            largest = max(faces, key=lambda f: f[2] * f[3])
-            x_center = largest[0] + largest[2] / 2.0
-            y_center = largest[1] + largest[3] / 2.0
-            return DetectionResult(x_center=x_center, y_center=y_center)
+
+        detections = []
+        for x, y, w, h in faces:
+            detections.append(DetectionResult(
+                x_center=x + w / 2.0,
+                y_center=y + h / 2.0,
+                confidence=float(w * h),
+                width=float(w),
+                height=float(h),
+            ))
+        return detections
+
+    def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
+        detections = self.detect_all(frame, orig_w, orig_h)
+        if detections:
+            return max(detections, key=lambda d: d.confidence)
         return None
 
 
@@ -66,21 +82,34 @@ class MediaPipeQualityEngine(PortraitDetectionEngine):
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             static_image_mode=False,
-            max_num_faces=1,
+            max_num_faces=3,
             refine_landmarks=True,
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
         
-    def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
+    def detect_all(self, frame: np.ndarray, orig_w: int, orig_h: int) -> List[DetectionResult]:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
-        
+
+        detections = []
         if results.multi_face_landmarks:
-            landmarks = results.multi_face_landmarks[0]
-            nose = landmarks.landmark[1]
-            return DetectionResult(x_center=nose.x * orig_w, y_center=nose.y * orig_h)
-        return None
+            for landmarks in results.multi_face_landmarks:
+                nose = landmarks.landmark[1]
+                xs = [point.x * orig_w for point in landmarks.landmark]
+                ys = [point.y * orig_h for point in landmarks.landmark]
+                detections.append(DetectionResult(
+                    x_center=nose.x * orig_w,
+                    y_center=nose.y * orig_h,
+                    confidence=1.0,
+                    width=max(xs) - min(xs),
+                    height=max(ys) - min(ys),
+                ))
+        return detections
+
+    def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
+        detections = self.detect_all(frame, orig_w, orig_h)
+        return detections[0] if detections else None
         
     def release(self):
         if self.face_mesh:
@@ -124,23 +153,31 @@ class YoloFastEngine(PortraitDetectionEngine):
         else:
             debug_log("[Portrait] YOLO using CPU (No CUDA/MPS detected)")
             
-    def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
-        import torch
+    def detect_all(self, frame: np.ndarray, orig_w: int, orig_h: int) -> List[DetectionResult]:
         # Class 0 is 'person' in COCO dataset
         results = self.model.predict(frame, classes=[0], verbose=False, conf=0.3)
-        
+
+        detections = []
         if len(results) > 0 and len(results[0].boxes) > 0:
             boxes = results[0].boxes
-            # Find largest person box
-            largest_idx = torch.argmax(boxes.conf) if hasattr(boxes.conf, 'shape') and len(boxes.conf.shape) > 0 else 0
-            
-            box = boxes[largest_idx].xyxy[0].cpu().numpy()
-            x1, y1, x2, y2 = box
-            
-            x_center = (x1 + x2) / 2.0
-            y_center = (y1 + y2) / 2.0
-            
-            return DetectionResult(x_center=x_center, y_center=y_center)
+            confidences = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else []
+            for idx, box_tensor in enumerate(boxes.xyxy):
+                box = box_tensor.cpu().numpy()
+                x1, y1, x2, y2 = box
+                confidence = float(confidences[idx]) if idx < len(confidences) else 1.0
+                detections.append(DetectionResult(
+                    x_center=(x1 + x2) / 2.0,
+                    y_center=(y1 + y2) / 2.0,
+                    confidence=confidence,
+                    width=float(x2 - x1),
+                    height=float(y2 - y1),
+                ))
+        return detections
+
+    def detect(self, frame: np.ndarray, orig_w: int, orig_h: int) -> Optional[DetectionResult]:
+        detections = self.detect_all(frame, orig_w, orig_h)
+        if detections:
+            return max(detections, key=lambda d: d.confidence)
         return None
 
 
@@ -151,6 +188,9 @@ class EngineManager:
         self.engine: Optional[PortraitDetectionEngine] = None
         self.profile = "balanced"
         self.settings = settings or {}
+        self.framing_mode = self.settings.get("speaker_framing_mode", "center_speaker")
+        if self.framing_mode not in ("center_speaker", "active_speaker"):
+            self.framing_mode = "center_speaker"
         
     def get_detection_interval(self) -> int:
         configured_interval = self.settings.get("detection_interval")
@@ -194,11 +234,91 @@ class EngineManager:
                 debug_log(f"[Portrait] Engine {engine_cls.__name__} failed to initialize: {e}")
                 
         raise RuntimeError("No suitable portrait detection engine could be initialized.")
+
+    def _candidate_size_score(self, result: DetectionResult, orig_w: int, orig_h: int) -> float:
+        if not result.width or not result.height:
+            return 0.0
+        frame_area = max(1.0, float(orig_w * orig_h))
+        return min(1.0, float(result.width * result.height) / frame_area * 12.0)
+
+    def _candidate_center_score(self, result: DetectionResult, orig_w: int) -> float:
+        return max(0.0, 1.0 - abs(result.x_center - orig_w / 2) / max(1.0, orig_w / 2))
+
+    def _candidate_continuity_score(self, result: DetectionResult, locked_x: float, orig_w: int) -> float:
+        return max(0.0, 1.0 - abs(result.x_center - locked_x) / max(1.0, orig_w / 3))
+
+    def _initial_candidate_score(self, result: DetectionResult, orig_w: int, orig_h: int) -> float:
+        center_score = self._candidate_center_score(result, orig_w)
+        size_score = self._candidate_size_score(result, orig_w, orig_h)
+        confidence = min(1.0, float(result.confidence or 0.0))
+        if self.framing_mode == "active_speaker":
+            return (confidence * 0.45) + (size_score * 0.35) + (center_score * 0.20)
+        return (center_score * 0.55) + (size_score * 0.25) + (confidence * 0.20)
+
+    def _locked_candidate_score(self, result: DetectionResult, locked_x: float, orig_w: int, orig_h: int) -> float:
+        continuity_score = self._candidate_continuity_score(result, locked_x, orig_w)
+        center_score = self._candidate_center_score(result, orig_w)
+        size_score = self._candidate_size_score(result, orig_w, orig_h)
+        confidence = min(1.0, float(result.confidence or 0.0))
+        if self.framing_mode == "active_speaker":
+            return (continuity_score * 0.45) + (confidence * 0.30) + (size_score * 0.20) + (center_score * 0.05)
+        return (continuity_score * 0.50) + (center_score * 0.30) + (size_score * 0.15) + (confidence * 0.05)
+
+    def _select_candidate(
+        self,
+        detections: List[DetectionResult],
+        locked_x: Optional[float],
+        pending_x: Optional[float],
+        stable_switch_count: int,
+        orig_w: int,
+        orig_h: int,
+    ):
+        if not detections:
+            return None, pending_x, 0, False
+
+        if locked_x is None:
+            selected = max(detections, key=lambda d: self._initial_candidate_score(d, orig_w, orig_h))
+            return selected, None, 0, False
+
+        switch_distance = orig_w * 0.18
+        near_lock = [d for d in detections if abs(d.x_center - locked_x) <= switch_distance]
+        far_from_lock = [d for d in detections if abs(d.x_center - locked_x) > switch_distance]
+
+        selected = max(near_lock, key=lambda d: self._locked_candidate_score(d, locked_x, orig_w, orig_h)) if near_lock else None
+
+        if not far_from_lock:
+            return selected or DetectionResult(x_center=locked_x), None, 0, False
+
+        challenger = max(far_from_lock, key=lambda d: self._initial_candidate_score(d, orig_w, orig_h))
+        current_score = self._initial_candidate_score(selected, orig_w, orig_h) if selected else 0.0
+        challenger_score = self._initial_candidate_score(challenger, orig_w, orig_h)
+        challenge_margin = 0.08 if self.framing_mode == "center_speaker" else 0.03
+
+        if challenger_score <= current_score + challenge_margin:
+            return selected or DetectionResult(x_center=locked_x), None, 0, False
+
+        if pending_x is not None and abs(challenger.x_center - pending_x) <= switch_distance:
+            stable_switch_count += 1
+        else:
+            pending_x = challenger.x_center
+            stable_switch_count = 1
+
+        required_switches = 3 if self.framing_mode == "center_speaker" else 2
+        if stable_switch_count >= required_switches:
+            return challenger, None, 0, True
+
+        hold = selected or DetectionResult(x_center=locked_x, y_center=challenger.y_center, confidence=challenger.confidence)
+        return hold, pending_x, stable_switch_count, False
         
     def process_pass_1(self, cap, total_frames: int, orig_w: int, orig_h: int, crop_w: int, is_cancelled_callback, progress_callback) -> List[int]:
         """Runs the interval-based detection pass and returns an array of crop positions per frame"""
         crop_positions = []
         current_target = orig_w / 2
+        locked_x = None
+        pending_x = None
+        stable_switch_count = 0
+        missed_detections = 0
+        target_switches = 0
         
         frame_count = 0
         detected_frames = 0
@@ -207,7 +327,10 @@ class EngineManager:
         import time
         
         interval = self.get_detection_interval()
-        debug_log(f"[Portrait] Starting Pass 1 with {self.engine.get_name()}, detecting every {interval} frames")
+        debug_log(
+            f"[Portrait] Starting Pass 1 with {self.engine.get_name()}, "
+            f"detecting every {interval} frames, framing={self.framing_mode}"
+        )
         
         # Exponential Moving Average for smoothing
         alpha = 0.2 
@@ -225,11 +348,30 @@ class EngineManager:
                 
             # Only detect every N frames
             if frame_count % interval == 0:
-                result = self.engine.detect(frame, orig_w, orig_h)
+                detections = self.engine.detect_all(frame, orig_w, orig_h)
                 detected_frames += 1
+                result, pending_x, stable_switch_count, switched = self._select_candidate(
+                    detections,
+                    locked_x,
+                    pending_x,
+                    stable_switch_count,
+                    orig_w,
+                    orig_h,
+                )
                 if result:
+                    missed_detections = 0
+                    if locked_x is None or switched:
+                        target_switches += 1 if locked_x is not None else 0
+                        locked_x = result.x_center
+                    else:
+                        locked_x = result.x_center
                     # Smooth tracking using EMA
                     current_target = (alpha * result.x_center) + ((1 - alpha) * current_target)
+                else:
+                    missed_detections += 1
+                    if missed_detections > 5:
+                        current_target = (0.05 * (orig_w / 2)) + (0.95 * current_target)
+                        locked_x = current_target
             else:
                 skipped_frames += 1
             
@@ -248,5 +390,8 @@ class EngineManager:
         if self.engine:
             self.engine.release()
             
-        debug_log(f"[Portrait] Pass 1 complete. Total: {frame_count}, Detected: {detected_frames}, Skipped: {skipped_frames}")
+        debug_log(
+            f"[Portrait] Pass 1 complete. Total: {frame_count}, Detected: {detected_frames}, "
+            f"Skipped: {skipped_frames}, Switches: {target_switches}, Missed: {missed_detections}"
+        )
         return crop_positions

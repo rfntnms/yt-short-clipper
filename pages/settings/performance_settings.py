@@ -85,6 +85,15 @@ class PerformanceSettingsSubPage(BaseSettingsSubPage):
         )
         self.detection_engine_menu.pack(fill="x", pady=(5, 10))
 
+        self.speaker_framing_var = ctk.StringVar(value="center_speaker")
+        ctk.CTkLabel(profile_frame, text="Speaker Framing", font=ctk.CTkFont(size=11)).pack(anchor="w")
+        self.speaker_framing_menu = ctk.CTkOptionMenu(
+            profile_frame,
+            values=["center_speaker", "active_speaker"],
+            variable=self.speaker_framing_var
+        )
+        self.speaker_framing_menu.pack(fill="x", pady=(5, 10))
+
         ctk.CTkLabel(profile_frame, text="Detection Interval (frames)", font=ctk.CTkFont(size=11)).pack(anchor="w")
         self.detection_interval_entry = ctk.CTkEntry(profile_frame, height=34)
         self.detection_interval_entry.pack(fill="x", pady=(5, 0))
@@ -271,6 +280,7 @@ class PerformanceSettingsSubPage(BaseSettingsSubPage):
         performance = config_dict.get("performance", {})
         self.profile_var.set(performance.get("profile", "balanced"))
         self.detection_engine_var.set(performance.get("detection_engine", config_dict.get("face_tracking_mode", "hybrid_auto")))
+        self.speaker_framing_var.set(performance.get("speaker_framing_mode", "center_speaker"))
         self.detection_interval_entry.delete(0, "end")
         self.detection_interval_entry.insert(0, str(performance.get("detection_interval", 10)))
         self.encoder_var.set(performance.get("encoder", "auto"))
@@ -324,6 +334,7 @@ class PerformanceSettingsSubPage(BaseSettingsSubPage):
             "encoder": self.encoder_var.get(),
             "codec": self.codec_var.get(),
             "detection_engine": self.detection_engine_var.get(),
+            "speaker_framing_mode": self.speaker_framing_var.get(),
             "detection_interval": detection_interval,
             "prefer_gpu": self.gpu_enabled_var.get(),
             "fallback_to_cpu": True,
