@@ -8,9 +8,10 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 from utils.helpers import get_ffmpeg_path, get_ytdlp_path
+from utils.ui_helpers import PageNavigationMixin
 
 
-class APIStatusPage(ctk.CTkFrame):
+class APIStatusPage(PageNavigationMixin, ctk.CTkFrame):
     """API Status page - check OpenAI and YouTube API status"""
     
     def __init__(self, parent, get_client_callback, get_config_callback, get_youtube_status_callback, on_back_callback, refresh_icon=None):
@@ -269,29 +270,7 @@ class APIStatusPage(ctk.CTkFrame):
         import webbrowser
         webbrowser.open("https://s.id/ytrepliz")
     
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server invite link"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name):
-        """Delegate to parent app's show_page method"""
-        try:
-            parent = self.master
-            while parent and not hasattr(parent, 'show_page'):
-                parent = parent.master
-            if parent and hasattr(parent, 'show_page'):
-                parent.show_page(page_name)
-        except:
-            pass
-
-
-class LibStatusPage(ctk.CTkFrame):
+class LibStatusPage(PageNavigationMixin, ctk.CTkFrame):
     """Library Status page - check FFmpeg and yt-dlp"""
     
     def __init__(self, parent, on_back_callback, refresh_icon=None):
@@ -723,24 +702,3 @@ class LibStatusPage(ctk.CTkFrame):
         self.deno_download_btn.configure(state="normal", text="📥 Download Deno")
         self.deno_progress.pack_forget()
         self.deno_progress_label.pack_forget()
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server invite link"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name):
-        """Delegate to parent app's show_page method"""
-        try:
-            parent = self.master
-            while parent and not hasattr(parent, 'show_page'):
-                parent = parent.master
-            if parent and hasattr(parent, 'show_page'):
-                parent.show_page(page_name)
-        except:
-            pass

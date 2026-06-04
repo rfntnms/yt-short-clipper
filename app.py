@@ -9,7 +9,6 @@ import os
 import sys
 import subprocess
 import re
-import urllib.request
 import io
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -23,11 +22,8 @@ from version import __version__, UPDATE_CHECK_URL
 from utils.helpers import get_app_dir, get_bundle_dir, get_ffmpeg_path, get_ytdlp_path, extract_video_id
 from utils.logger import debug_log, setup_error_logging, log_error, get_error_log_path
 from config.config_manager import ConfigManager
-from dialogs.model_selector import SearchableModelDropdown
-from dialogs.youtube_upload import YouTubeUploadDialog
 from dialogs.terms_of_service import TermsOfServiceDialog
 from dialogs.autoklip_promo import AutoKlipPromoDialog
-from components.progress_step import ProgressStep
 from pages.settings_page import SettingsPage
 from pages.browse_page import BrowsePage
 from pages.results_page import ResultsPage
@@ -37,6 +33,7 @@ from pages.clipping_page import ClippingPage
 from pages.contact_page import ContactPage
 from pages.highlight_selection_page import HighlightSelectionPage
 from pages.session_browser_page import SessionBrowserPage
+from services.update_service import compare_versions, fetch_update_info
 
 # Fix for PyInstaller windowed mode (console=False)
 # When built with console=False, sys.stdout and sys.stderr are None
@@ -1742,79 +1739,51 @@ class YTShortClipperApp(ctk.CTk):
     def check_update_silent(self):
         """Check for updates silently on startup"""
         try:
-            # Get installation_id from config
             installation_id = self.config.get("installation_id", "unknown")
-            url = f"{UPDATE_CHECK_URL}?installation_id={installation_id}&app_version={__version__}"
-            
-            req = urllib.request.Request(url, headers={'User-Agent': 'YT-Short-Clipper'})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
-                latest_version = data.get("version", "")
-                download_url = data.get("download_url", "")
-                changelog = data.get("changelog", "")
-                
-                if latest_version and self._compare_versions(latest_version, __version__) > 0:
-                    # New version available
-                    self.after(0, lambda: self._show_update_notification(latest_version, download_url, changelog))
+            data = fetch_update_info(UPDATE_CHECK_URL, installation_id, __version__, timeout=5)
+            latest_version = data.get("version", "")
+            download_url = data.get("download_url", "")
+            changelog = data.get("changelog", "")
+
+            if latest_version and self._compare_versions(latest_version, __version__) > 0:
+                self.after(0, lambda: self._show_update_notification(latest_version, download_url, changelog))
         except Exception as e:
             debug_log(f"Update check failed: {e}")
     
     def check_update_manual(self):
         """Check for updates manually from settings page"""
         try:
-            # Get installation_id from config
             installation_id = self.config.get("installation_id", "unknown")
-            url = f"{UPDATE_CHECK_URL}?installation_id={installation_id}&app_version={__version__}"
-            
-            req = urllib.request.Request(url, headers={'User-Agent': 'YT-Short-Clipper'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode())
-                latest_version = data.get("version", "")
-                download_url = data.get("download_url", "")
-                changelog = data.get("changelog", "")
-                
-                if not latest_version:
-                    messagebox.showinfo("Update Check", "Could not retrieve version information.")
-                    return
-                
-                comparison = self._compare_versions(latest_version, __version__)
-                
-                if comparison > 0:
-                    # New version available
-                    msg = f"New version available: {latest_version}\nCurrent version: {__version__}\n\n"
-                    if changelog:
-                        msg += f"Changelog:\n{changelog}\n\n"
-                    msg += f"Download: {download_url}"
-                    
-                    if messagebox.askyesno("Update Available", msg + "\n\nOpen download page?"):
-                        import webbrowser
-                        webbrowser.open(download_url)
-                elif comparison == 0:
-                    messagebox.showinfo("Update Check", f"You are using the latest version ({__version__})")
-                else:
-                    messagebox.showinfo("Update Check", f"Your version ({__version__}) is newer than the latest release ({latest_version})")
+            data = fetch_update_info(UPDATE_CHECK_URL, installation_id, __version__, timeout=10)
+            latest_version = data.get("version", "")
+            download_url = data.get("download_url", "")
+            changelog = data.get("changelog", "")
+
+            if not latest_version:
+                messagebox.showinfo("Update Check", "Could not retrieve version information.")
+                return
+
+            comparison = self._compare_versions(latest_version, __version__)
+
+            if comparison > 0:
+                msg = f"New version available: {latest_version}\nCurrent version: {__version__}\n\n"
+                if changelog:
+                    msg += f"Changelog:\n{changelog}\n\n"
+                msg += f"Download: {download_url}"
+
+                if messagebox.askyesno("Update Available", msg + "\n\nOpen download page?"):
+                    import webbrowser
+                    webbrowser.open(download_url)
+            elif comparison == 0:
+                messagebox.showinfo("Update Check", f"You are using the latest version ({__version__})")
+            else:
+                messagebox.showinfo("Update Check", f"Your version ({__version__}) is newer than the latest release ({latest_version})")
         except Exception as e:
             messagebox.showerror("Update Check Failed", f"Could not check for updates:\n{str(e)}")
     
     def _compare_versions(self, v1: str, v2: str) -> int:
         """Compare two version strings. Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal"""
-        try:
-            parts1 = [int(x) for x in v1.split('.')]
-            parts2 = [int(x) for x in v2.split('.')]
-            
-            # Pad shorter version with zeros
-            max_len = max(len(parts1), len(parts2))
-            parts1 += [0] * (max_len - len(parts1))
-            parts2 += [0] * (max_len - len(parts2))
-            
-            for p1, p2 in zip(parts1, parts2):
-                if p1 > p2:
-                    return 1
-                elif p1 < p2:
-                    return -1
-            return 0
-        except:
-            return 0
+        return compare_versions(v1, v2)
     
     def _show_update_notification(self, latest_version: str, download_url: str, changelog: str = ""):
         """Show update notification popup"""

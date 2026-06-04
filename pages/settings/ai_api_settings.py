@@ -1,4 +1,4 @@
-﻿"""
+"""
 AI API Settings Sub-Page - Card-based navigation to individual providers
 """
 

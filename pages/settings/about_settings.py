@@ -1,4 +1,4 @@
-﻿"""
+"""
 About Settings Sub-Page
 """
 

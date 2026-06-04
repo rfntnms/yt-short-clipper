@@ -15,19 +15,11 @@ import sys
 import time
 from pathlib import Path
 from datetime import datetime
-from openai import OpenAI, APIError, APIConnectionError, RateLimitError, APIStatusError
-from utils.logger import debug_log
-from utils.helpers import get_deno_path, get_ffmpeg_path, is_ytdlp_module_available, ensure_binaries_in_path, hex_to_rgb
+from openai import OpenAI, APIConnectionError, RateLimitError, APIStatusError
+from utils.helpers import ensure_binaries_in_path, hex_to_rgb
 
 # Setup Deno and FFmpeg in PATH before importing yt-dlp
 ensure_binaries_in_path()
-
-# Import yt-dlp module if available
-try:
-    import yt_dlp
-    YTDLP_MODULE_AVAILABLE = True
-except ImportError:
-    YTDLP_MODULE_AVAILABLE = False
 
 
 # Hide console window on Windows
@@ -1107,7 +1099,58 @@ class AutoClipperCore:
             self.log(f"   Consider using a better AI model or adjusting the prompt.")
         
         return valid[:num_clips]
-    
+
+    def _build_landscape_clip_command(self, video_path: str, start: str, end: str, landscape_file: Path, pre_cut: bool):
+        """Build the FFmpeg command for the first clip-processing step."""
+        encoder_args = self.get_video_encoder_args()
+        cmd = [
+            self.ffmpeg_path, "-y",
+            *self.get_hwaccel_args(),
+            "-i", video_path,
+        ]
+
+        if not pre_cut:
+            cmd.extend(["-ss", start, "-to", end])
+
+        cmd.extend([
+            *encoder_args,
+            "-c:a", "aac", "-b:a", "192k",
+            "-progress", "pipe:1",
+            str(landscape_file),
+        ])
+        return cmd
+
+    def _run_landscape_clip_step(
+        self,
+        video_path: str,
+        start: str,
+        end: str,
+        landscape_file: Path,
+        duration: float,
+        pre_cut: bool,
+        current_step: int,
+        clip_progress,
+    ):
+        """Cut or re-encode the landscape input while preserving existing logs."""
+        if pre_cut:
+            step_name = "Re-encoding video..."
+            command_name = "Re-encode Pre-cut Section"
+            done_message = "  ✓ Re-encoded pre-cut section"
+        else:
+            step_name = "Cutting video..."
+            command_name = "Cut Video"
+            done_message = "  ✓ Cut video"
+
+        clip_progress(step_name, current_step, 0)
+        cmd = self._build_landscape_clip_command(video_path, start, end, landscape_file, pre_cut)
+        self.log_ffmpeg_command(cmd, command_name)
+        self.run_ffmpeg_with_progress(
+            cmd,
+            duration,
+            lambda p: clip_progress(step_name, current_step, p),
+        )
+        self.log(done_message)
+
     def process_clip(self, video_path: str, highlight: dict, index: int, total_clips: int = 1, add_captions: bool = True, add_hook: bool = True, pre_cut: bool = False):
         """Process a single clip: cut, portrait, hook (optional), captions (optional)
         
@@ -1125,10 +1168,7 @@ class AutoClipperCore:
         if self.is_cancelled():
             return
         
-        # Create output folder with unique timestamp per clip
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{index:02d}"
-        clip_dir = self.output_dir / timestamp
-        clip_dir.mkdir(parents=True, exist_ok=True)
+        clip_dir = self._create_clip_output_dir(index)
         
         self.log(f"  Output folder: {clip_dir}")
         
@@ -1137,33 +1177,11 @@ class AutoClipperCore:
         
         self.log(f"\n[Clip {index}] {highlight['title']}")
         
-        # Calculate total steps based on options
-        total_steps = 1  # Re-encode/Cut is always 1 step
-        total_steps += 1  # Portrait conversion always
-        if add_hook:
-            total_steps += 1
-        if add_captions:
-            total_steps += 1
+        total_steps = self._get_clip_total_steps(add_captions, add_hook)
         
         # Helper to report sub-progress with percentage
         def clip_progress(step_name: str, step_num: int, sub_progress: float = 0):
-            # Calculate overall progress: base (30%) + clip progress (60%)
-            clip_base = 0.3 + (0.6 * (index - 1) / total_clips)
-            clip_portion = 0.6 / total_clips
-            step_progress = clip_portion * ((step_num + sub_progress) / total_steps)
-            overall = clip_base + step_progress
-            
-            # Format with percentage
-            percent = int(sub_progress * 100)
-            if percent > 0:
-                status = f"Clip {index}/{total_clips}: {step_name} ({percent}%)"
-            else:
-                status = f"Clip {index}/{total_clips}: {step_name}"
-            
-            print(f"[DEBUG] clip_progress: {status} (overall: {overall*100:.1f}%)")
-            self.set_progress(status, overall)
-        
-        current_step = 0
+            self._report_clip_progress(index, total_clips, total_steps, step_name, step_num, sub_progress)
         
         # Step 1: Cut video (skip if pre-cut section from --download-sections)
         if self.is_cancelled():
@@ -1171,52 +1189,17 @@ class AutoClipperCore:
         
         landscape_file = clip_dir / "temp_landscape.mp4"
         duration = self.parse_timestamp(end) - self.parse_timestamp(start)
-        
-        if pre_cut:
-            # Video is already cut to the right section, just re-encode for consistency
-            clip_progress("Re-encoding video...", current_step, 0)
-            
-            encoder_args = self.get_video_encoder_args()
-            
-            cmd = [
-                self.ffmpeg_path, "-y",
-                *self.get_hwaccel_args(),
-                "-i", video_path,
-                *encoder_args,
-                "-c:a", "aac", "-b:a", "192k",
-                "-progress", "pipe:1",
-                str(landscape_file)
-            ]
-            
-            self.log_ffmpeg_command(cmd, "Re-encode Pre-cut Section")
-            
-            self.run_ffmpeg_with_progress(cmd, duration, 
-                lambda p: clip_progress("Re-encoding video...", current_step, p))
-            
-            self.log("  ✓ Re-encoded pre-cut section")
-        else:
-            # Original flow: cut from full video
-            clip_progress("Cutting video...", current_step, 0)
-            
-            encoder_args = self.get_video_encoder_args()
-            
-            cmd = [
-                self.ffmpeg_path, "-y",
-                *self.get_hwaccel_args(),
-                "-i", video_path,
-                "-ss", start, "-to", end,
-                *encoder_args,
-                "-c:a", "aac", "-b:a", "192k",
-                "-progress", "pipe:1",
-                str(landscape_file)
-            ]
-            
-            self.log_ffmpeg_command(cmd, "Cut Video")
-            
-            self.run_ffmpeg_with_progress(cmd, duration, 
-                lambda p: clip_progress("Cutting video...", current_step, p))
-            
-            self.log("  ✓ Cut video")
+
+        self._run_landscape_clip_step(
+            video_path,
+            start,
+            end,
+            landscape_file,
+            duration,
+            pre_cut,
+            current_step,
+            clip_progress,
+        )
         
         current_step += 1
         
@@ -1313,12 +1296,7 @@ class AutoClipperCore:
             
             # Cleanup temp captioned file if exists
             if add_captions:
-                try:
-                    temp_captioned = clip_dir / "temp_captioned.mp4"
-                    if temp_captioned.exists():
-                        temp_captioned.unlink()
-                except Exception as e:
-                    self.log(f"  Warning: Could not delete temp_captioned.mp4: {e}")
+                self._delete_clip_temp_file(clip_dir / "temp_captioned.mp4", "temp_captioned.mp4")
         elif not add_captions:
             # No captions and no watermark, just copy current output to final
             import shutil
@@ -1350,53 +1328,13 @@ class AutoClipperCore:
             current_step += 1
             
             # Cleanup temp file
-            try:
-                temp_credit_input = clip_dir / "temp_before_credit.mp4"
-                if temp_credit_input.exists():
-                    temp_credit_input.unlink()
-            except Exception as e:
-                self.log(f"  Warning: Could not delete temp_before_credit.mp4: {e}")
+            self._delete_clip_temp_file(clip_dir / "temp_before_credit.mp4", "temp_before_credit.mp4")
         
         # Mark complete
         clip_progress("Done", total_steps, 0)
         
-        # Cleanup temp files
-        try:
-            if landscape_file.exists():
-                landscape_file.unlink()
-        except Exception as e:
-            self.log(f"  Warning: Could not delete {landscape_file.name}: {e}")
-        
-        try:
-            if portrait_file.exists():
-                portrait_file.unlink()
-        except Exception as e:
-            self.log(f"  Warning: Could not delete {portrait_file.name}: {e}")
-        
-        if add_hook:
-            try:
-                hooked_file = clip_dir / "temp_hooked.mp4"
-                if hooked_file.exists():
-                    hooked_file.unlink()
-            except Exception as e:
-                self.log(f"  Warning: Could not delete temp_hooked.mp4: {e}")
-        
-        # Save metadata
-        metadata = {
-            "title": highlight["title"],
-            "hook_text": highlight.get("hook_text", highlight["title"]),
-            "start_time": highlight["start_time"],
-            "end_time": highlight["end_time"],
-            "duration_seconds": highlight["duration_seconds"],
-            "has_hook": add_hook,
-            "has_captions": add_captions,
-            "has_watermark": self.watermark_settings.get("enabled", False),
-            "has_credit": self.credit_watermark_settings.get("enabled", False),
-            "channel_name": self.channel_name,
-        }
-        
-        with open(clip_dir / "data.json", "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        self._cleanup_clip_temp_files(clip_dir, landscape_file, portrait_file, add_hook)
+        self._write_clip_metadata(clip_dir, highlight, add_hook, add_captions)
     
     def convert_to_portrait(self, input_path: str, output_path: str):
         """Convert landscape to 9:16 portrait with speaker tracking (router method)"""
@@ -1829,89 +1767,13 @@ class AutoClipperCore:
             audio_source: Video to extract audio from for transcription (without hook)
             time_offset: Offset to add to all timestamps (hook duration)
         """
-        
-        # Use audio_source if provided, otherwise use input_path
-        transcribe_source = audio_source if audio_source else input_path
-        
-        # Extract audio from video - use WAV format for better compatibility
-        audio_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False).name
-        cmd = [
-            self.ffmpeg_path, "-y",
-            *self.get_hwaccel_args(),
-            "-i", transcribe_source,
-            "-vn",
-            "-acodec", "pcm_s16le",  # PCM 16-bit WAV
-            "-ar", "16000",  # 16kHz sample rate
-            "-ac", "1",  # Mono
-            audio_file
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
-        
-        if result.returncode != 0:
-            self.log(f"  Warning: Audio extraction failed")
-            import shutil
-            shutil.copy(input_path, output_path)
-            return
-        
-        # Check if audio file exists and has content
-        if not os.path.exists(audio_file) or os.path.getsize(audio_file) < 1000:
-            self.log(f"  Warning: Audio file too small or missing")
-            import shutil
-            shutil.copy(input_path, output_path)
-            if os.path.exists(audio_file):
-                os.unlink(audio_file)
-            return
-        
-        # Get audio duration for token reporting
-        probe_cmd = [self.ffmpeg_path, "-i", audio_file, "-f", "null", "-"]
-        result = subprocess.run(probe_cmd, capture_output=True, text=True, creationflags=SUBPROCESS_FLAGS)
-        duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", result.stderr)
-        audio_duration = 0
-        if duration_match:
-            h, m, s = duration_match.groups()
-            audio_duration = int(h) * 3600 + int(m) * 60 + float(s)
-            self.report_tokens(0, 0, audio_duration, 0)
-        
-        # Transcribe using Whisper API with word-level timestamps
-        # (raw HTTP for proxy compatibility)
-        try:
-            transcript = self._whisper_transcribe_words_api(audio_file)
-        except Exception as e:
-            self.log(f"  Warning: Whisper API error: {e}")
-            import shutil
-            shutil.copy(input_path, output_path)
-            os.unlink(audio_file)
-            return
-        
-        os.unlink(audio_file)
-        
-        # Create ASS subtitle file with time offset for hook
-        ass_file = tempfile.NamedTemporaryFile(mode='w', suffix='.ass', delete=False, encoding='utf-8').name
-        self.create_ass_subtitle_capcut(transcript, ass_file, time_offset)
-        
-        # Burn subtitles into video using GPU/CPU encoder
-        # Escape path for FFmpeg on Windows
-        ass_path_escaped = ass_file.replace('\\', '/').replace(':', '\\:')
-        
-        encoder_args = self.get_video_encoder_args()
-        cmd = [
-            self.ffmpeg_path, "-y",
-            *self.get_hwaccel_args(),
-            "-i", input_path,
-            "-vf", f"ass='{ass_path_escaped}'",
-            *encoder_args,
-            "-c:a", "copy",
-            output_path
-        ]
-        
-        self.log_ffmpeg_command(cmd, "Burn Captions")
-        result = self._run_ffmpeg_subprocess(cmd)
-        os.unlink(ass_file)
-        
-        if result.returncode != 0:
-            self.log(f"  Warning: Caption burn failed, copying without captions")
-            import shutil
-            shutil.copy(input_path, output_path)
+        return self.add_captions_api_with_progress(
+            input_path,
+            output_path,
+            audio_source=audio_source,
+            time_offset=time_offset,
+            progress_callback=lambda _progress: None,
+        )
     
     def create_ass_subtitle_capcut(self, transcript, output_path: str, time_offset: float = 0):
         """Create ASS subtitle file with CapCut-style word-by-word highlighting"""
@@ -2005,6 +1867,79 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         ts = ts.replace(",", ".")
         parts = ts.split(":")
         return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+
+    def _create_clip_output_dir(self, index: int) -> Path:
+        """Create the timestamped output directory for a processed clip."""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{index:02d}"
+        clip_dir = self.output_dir / timestamp
+        clip_dir.mkdir(parents=True, exist_ok=True)
+        return clip_dir
+
+    def _get_clip_total_steps(self, add_captions: bool, add_hook: bool) -> int:
+        """Return the initial progress step count for process_clip."""
+        total_steps = 2  # Cut/re-encode and portrait conversion are always run.
+        if add_hook:
+            total_steps += 1
+        if add_captions:
+            total_steps += 1
+        return total_steps
+
+    def _report_clip_progress(
+        self,
+        index: int,
+        total_clips: int,
+        total_steps: int,
+        step_name: str,
+        step_num: int,
+        sub_progress: float = 0,
+    ):
+        """Report per-clip progress using the existing overall progress scale."""
+        clip_base = 0.3 + (0.6 * (index - 1) / total_clips)
+        clip_portion = 0.6 / total_clips
+        step_progress = clip_portion * ((step_num + sub_progress) / total_steps)
+        overall = clip_base + step_progress
+
+        percent = int(sub_progress * 100)
+        if percent > 0:
+            status = f"Clip {index}/{total_clips}: {step_name} ({percent}%)"
+        else:
+            status = f"Clip {index}/{total_clips}: {step_name}"
+
+        print(f"[DEBUG] clip_progress: {status} (overall: {overall*100:.1f}%)")
+        self.set_progress(status, overall)
+
+    def _delete_clip_temp_file(self, path: Path, display_name: str = None):
+        """Delete one temporary clip file, logging the same warning style as before."""
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception as e:
+            self.log(f"  Warning: Could not delete {display_name or path.name}: {e}")
+
+    def _cleanup_clip_temp_files(self, clip_dir: Path, landscape_file: Path, portrait_file: Path, add_hook: bool):
+        """Clean up temporary files created by process_clip."""
+        self._delete_clip_temp_file(landscape_file)
+        self._delete_clip_temp_file(portrait_file)
+        if add_hook:
+            self._delete_clip_temp_file(clip_dir / "temp_hooked.mp4", "temp_hooked.mp4")
+
+    def _write_clip_metadata(self, clip_dir: Path, highlight: dict, add_hook: bool, add_captions: bool):
+        """Write the clip metadata file produced by process_clip."""
+        metadata = {
+            "title": highlight["title"],
+            "hook_text": highlight.get("hook_text", highlight["title"]),
+            "start_time": highlight["start_time"],
+            "end_time": highlight["end_time"],
+            "duration_seconds": highlight["duration_seconds"],
+            "has_hook": add_hook,
+            "has_captions": add_captions,
+            "has_watermark": self.watermark_settings.get("enabled", False),
+            "has_credit": self.credit_watermark_settings.get("enabled", False),
+            "channel_name": self.channel_name,
+        }
+
+        with open(clip_dir / "data.json", "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
     
     def cleanup(self):
         """Clean up temp files"""

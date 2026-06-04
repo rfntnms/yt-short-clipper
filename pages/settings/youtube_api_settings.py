@@ -1,4 +1,4 @@
-﻿"""
+"""
 YouTube API Settings Sub-Page
 """
 

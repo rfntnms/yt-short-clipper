@@ -1,12 +1,12 @@
 import os
 import json
 import subprocess
-import time
 import re
 import shlex
 from utils.logger import debug_log
 from pathlib import Path
-from utils.helpers import ensure_binaries_in_path, get_ffmpeg_path, get_deno_path, parse_timestamp
+from typing import Optional
+from utils.helpers import ensure_binaries_in_path, get_app_dir, get_ffmpeg_path, get_deno_path, parse_timestamp
 
 try:
     import yt_dlp
@@ -51,6 +51,62 @@ class DownloadService:
     def _format_cmd(self, cmd: list) -> str:
         """Format a command for logs without executing through a shell."""
         return " ".join(shlex.quote(str(part)) for part in cmd)
+
+    def _use_ytdlp_module(self) -> bool:
+        return YTDLP_MODULE_AVAILABLE and self.ytdlp_path == "yt_dlp_module"
+
+    def _format_selector(self) -> str:
+        return "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+
+    def _find_cookies_path(self, log_checks: bool = False) -> Optional[Path]:
+        for loc in [Path("cookies.txt"), get_app_dir() / "cookies.txt"]:
+            if log_checks:
+                debug_log(f"  Checking cookies at: {loc} - exists: {loc.exists()}")
+            if loc.exists():
+                return loc
+        return None
+
+    def _require_cookies_path(self, log_checks: bool = False) -> Path:
+        cookies_path = self._find_cookies_path(log_checks=log_checks)
+        if not cookies_path:
+            raise Exception("cookies.txt not found!\n\nPlease upload cookies.txt file from home page.")
+        return cookies_path
+
+    def _apply_js_runtime_options(self, ydl_opts: dict, deno_path: str, log_status: bool = False):
+        if deno_path and Path(deno_path).exists():
+            ydl_opts['js_runtimes'] = {'deno': {'path': deno_path}}
+            ydl_opts['remote_components'] = ['ejs:github']
+            if log_status:
+                debug_log(f"  JS runtime: deno at {deno_path}")
+        elif log_status:
+            debug_log("  WARNING: Deno not found - some formats may be missing!")
+
+    def _apply_ffmpeg_location_options(self, ydl_opts: dict, ffmpeg_path: str, include_subtitle_postprocessor: bool):
+        if ffmpeg_path and Path(ffmpeg_path).exists():
+            ydl_opts['ffmpeg_location'] = str(Path(ffmpeg_path).parent)
+            debug_log(f"  FFmpeg location: {ydl_opts['ffmpeg_location']}")
+            if include_subtitle_postprocessor:
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegSubtitlesConvertor',
+                    'format': 'srt',
+                }]
+        else:
+            debug_log("  WARNING: FFmpeg not found - subtitle conversion disabled")
+
+    def _find_downloaded_srt(self) -> Optional[Path]:
+        srt_path = self.temp_dir / f"source.{self.subtitle_language}.srt"
+        if srt_path.exists():
+            return srt_path
+
+        available_subs = list(self.temp_dir.glob("source.*.srt"))
+        if available_subs:
+            srt_path = available_subs[0]
+            detected_lang = srt_path.stem.split('.')[-1]
+            debug_log(f"  ⚠ {self.subtitle_language} subtitle not found, using {detected_lang} instead")
+            return srt_path
+
+        debug_log(f"  ✗ No subtitle found for language: {self.subtitle_language}")
+        return None
 
     def _extract_video_encoder(self, args: list) -> str:
         for idx, token in enumerate(args[:-1]):
@@ -158,12 +214,9 @@ class DownloadService:
         debug_log("[1/4] Downloading video & subtitle...")
         
         # Check if using yt-dlp module
-        use_module = YTDLP_MODULE_AVAILABLE and self.ytdlp_path == "yt_dlp_module"
-        
-        if use_module:
+        if self._use_ytdlp_module():
             return self._download_video_module(url)
-        else:
-            return self._download_video_subprocess(url)
+        return self._download_video_subprocess(url)
     
     def _download_video_module(self, url: str) -> tuple:
         """Download video using yt-dlp Python module API"""
@@ -200,7 +253,7 @@ class DownloadService:
                 self.set_progress("Processing downloaded file...", 0.25)
         
         # High-quality format selector
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._format_selector()
         
         # Base yt-dlp options
         ydl_opts = {
@@ -224,45 +277,16 @@ class DownloadService:
             debug_log("  Skipping subtitle download (AI transcription mode)")
         
         # Add Deno JS runtime if available
-        if deno_path and Path(deno_path).exists():
-            ydl_opts['js_runtimes'] = {'deno': {'path': deno_path}}
-            ydl_opts['remote_components'] = ['ejs:github']
-            debug_log(f"  JS runtime: deno at {deno_path}")
-        else:
-            debug_log(f"  WARNING: Deno not found - some formats may be missing!")
+        self._apply_js_runtime_options(ydl_opts, deno_path, log_status=True)
         
         # Add FFmpeg location if available
-        if ffmpeg_path and Path(ffmpeg_path).exists():
-            ydl_opts['ffmpeg_location'] = str(Path(ffmpeg_path).parent)
-            debug_log(f"  FFmpeg location: {ydl_opts['ffmpeg_location']}")
-            
-            # Only add subtitle converter postprocessor if FFmpeg is available AND subtitles requested
-            if self.subtitle_language and self.subtitle_language != "none":
-                ydl_opts['postprocessors'] = [{
-                    'key': 'FFmpegSubtitlesConvertor',
-                    'format': 'srt',
-                }]
-        else:
-            debug_log(f"  WARNING: FFmpeg not found - subtitle conversion disabled")
+        self._apply_ffmpeg_location_options(
+            ydl_opts,
+            ffmpeg_path,
+            include_subtitle_postprocessor=bool(self.subtitle_language and self.subtitle_language != "none"),
+        )
         
-        # Add cookies (required)
-        from utils.helpers import get_app_dir
-        app_dir = get_app_dir()
-        cookies_locations = [
-            Path("cookies.txt"),  # Current directory
-            app_dir / "cookies.txt",  # App directory
-        ]
-        
-        cookies_path = None
-        for loc in cookies_locations:
-            debug_log(f"  Checking cookies at: {loc} - exists: {loc.exists()}")
-            if loc.exists():
-                cookies_path = loc
-                break
-        
-        if not cookies_path:
-            raise Exception("cookies.txt not found!\n\nPlease upload cookies.txt file from home page.")
-        
+        cookies_path = self._require_cookies_path(log_checks=True)
         ydl_opts['cookiefile'] = str(cookies_path)
         debug_log(f"  Using cookies from: {cookies_path}")
         
@@ -351,18 +375,7 @@ class DownloadService:
                 raise Exception(f"Download failed!\n\n{last_error}")
         
         video_path = self.temp_dir / "source.mp4"
-        srt_path = self.temp_dir / f"source.{self.subtitle_language}.srt"
-        
-        if not srt_path.exists():
-            # Check if any subtitle was downloaded (fallback to other languages)
-            available_subs = list(self.temp_dir.glob("source.*.srt"))
-            if available_subs:
-                srt_path = available_subs[0]
-                detected_lang = srt_path.stem.split('.')[-1]
-                debug_log(f"  ⚠ {self.subtitle_language} subtitle not found, using {detected_lang} instead")
-            else:
-                srt_path = None
-                debug_log(f"  ✗ No subtitle found for language: {self.subtitle_language}")
+        srt_path = self._find_downloaded_srt()
         
         return str(video_path), str(srt_path) if srt_path else None, video_info
     
@@ -450,7 +463,7 @@ class DownloadService:
         ]
         
         # High-quality format selector (prioritize 720p+ with fallback)
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._format_selector()
         
         last_error = None
         for strategy in download_strategies:
@@ -600,18 +613,7 @@ class DownloadService:
                 raise Exception(f"Download failed after trying all methods!\n\nLast error:\n{last_error}")
         
         video_path = self.temp_dir / "source.mp4"
-        srt_path = self.temp_dir / f"source.{self.subtitle_language}.srt"
-        
-        if not srt_path.exists():
-            # Check if any subtitle was downloaded (fallback to other languages)
-            available_subs = list(self.temp_dir.glob("source.*.srt"))
-            if available_subs:
-                srt_path = available_subs[0]
-                detected_lang = srt_path.stem.split('.')[-1]
-                debug_log(f"  ⚠ {self.subtitle_language} subtitle not found, using {detected_lang} instead")
-            else:
-                srt_path = None
-                debug_log(f"  ✗ No subtitle found for language: {self.subtitle_language}")
+        srt_path = self._find_downloaded_srt()
         
         return str(video_path), str(srt_path) if srt_path else None, video_info
 
@@ -932,12 +934,9 @@ class DownloadService:
         """
         debug_log("[1/2] Downloading subtitle only...")
         
-        use_module = YTDLP_MODULE_AVAILABLE and self.ytdlp_path == "yt_dlp_module"
-        
-        if use_module:
+        if self._use_ytdlp_module():
             return self._download_subtitle_only_module(url)
-        else:
-            return self._download_subtitle_only_subprocess(url)
+        return self._download_subtitle_only_subprocess(url)
     
     def _download_subtitle_only_module(self, url: str) -> tuple:
         """Download subtitle only using yt-dlp Python module API"""
@@ -965,35 +964,16 @@ class DownloadService:
         }
         
         # Add Deno JS runtime if available
-        if deno_path and Path(deno_path).exists():
-            ydl_opts['js_runtimes'] = {'deno': {'path': deno_path}}
-            ydl_opts['remote_components'] = ['ejs:github']
+        self._apply_js_runtime_options(ydl_opts, deno_path)
         
         # Add FFmpeg location for subtitle conversion
-        if ffmpeg_path and Path(ffmpeg_path).exists():
-            ydl_opts['ffmpeg_location'] = str(Path(ffmpeg_path).parent)
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegSubtitlesConvertor',
-                'format': 'srt',
-            }]
+        self._apply_ffmpeg_location_options(
+            ydl_opts,
+            ffmpeg_path,
+            include_subtitle_postprocessor=True,
+        )
         
-        # Add cookies
-        from utils.helpers import get_app_dir
-        app_dir = get_app_dir()
-        cookies_locations = [
-            Path("cookies.txt"),
-            app_dir / "cookies.txt",
-        ]
-        
-        cookies_path = None
-        for loc in cookies_locations:
-            if loc.exists():
-                cookies_path = loc
-                break
-        
-        if not cookies_path:
-            raise Exception("cookies.txt not found!\n\nPlease upload cookies.txt file from home page.")
-        
+        cookies_path = self._require_cookies_path()
         ydl_opts['cookiefile'] = str(cookies_path)
         
         try:
@@ -1027,17 +1007,7 @@ class DownloadService:
                 raise Exception(f"Subtitle download failed!\n\n{last_error}")
         
         # Find downloaded subtitle file
-        srt_path = self.temp_dir / f"source.{self.subtitle_language}.srt"
-        
-        if not srt_path.exists():
-            available_subs = list(self.temp_dir.glob("source.*.srt"))
-            if available_subs:
-                srt_path = available_subs[0]
-                detected_lang = srt_path.stem.split('.')[-1]
-                debug_log(f"  ⚠ {self.subtitle_language} subtitle not found, using {detected_lang} instead")
-            else:
-                srt_path = None
-                debug_log(f"  ✗ No subtitle found for language: {self.subtitle_language}")
+        srt_path = self._find_downloaded_srt()
         
         return str(srt_path) if srt_path else None, video_info
     
@@ -1060,17 +1030,10 @@ class DownloadService:
         debug_log("  Fetching video info...")
         meta_cmd = [self.ytdlp_path, "--dump-json", "--no-download", url]
         
-        # Add cookies
-        from utils.helpers import get_app_dir
-        app_dir = get_app_dir()
-        cookies_path = None
-        for loc in [Path("cookies.txt"), app_dir / "cookies.txt"]:
-            if loc.exists():
-                cookies_path = str(loc)
-                break
+        cookies_path = self._find_cookies_path()
         
         if cookies_path:
-            meta_cmd.extend(["--cookies", cookies_path])
+            meta_cmd.extend(["--cookies", str(cookies_path)])
         
         result = subprocess.run(
             meta_cmd, capture_output=True, text=True,
@@ -1102,7 +1065,7 @@ class DownloadService:
         ]
         
         if cookies_path:
-            cmd.extend(["--cookies", cookies_path])
+            cmd.extend(["--cookies", str(cookies_path)])
         
         cmd.append(url)
         
@@ -1118,18 +1081,7 @@ class DownloadService:
         
         debug_log(f"  ✓ Subtitle download complete!")
         
-        # Find downloaded subtitle file
-        srt_path = self.temp_dir / f"source.{self.subtitle_language}.srt"
-        
-        if not srt_path.exists():
-            available_subs = list(self.temp_dir.glob("source.*.srt"))
-            if available_subs:
-                srt_path = available_subs[0]
-                detected_lang = srt_path.stem.split('.')[-1]
-                debug_log(f"  ⚠ {self.subtitle_language} subtitle not found, using {detected_lang} instead")
-            else:
-                srt_path = None
-                debug_log(f"  ✗ No subtitle found for language: {self.subtitle_language}")
+        srt_path = self._find_downloaded_srt()
         
         return str(srt_path) if srt_path else None, video_info
     
@@ -1149,12 +1101,9 @@ class DownloadService:
         start_clean = start_time.replace(",", ".")
         end_clean = end_time.replace(",", ".")
         
-        use_module = YTDLP_MODULE_AVAILABLE and self.ytdlp_path == "yt_dlp_module"
-        
-        if use_module:
+        if self._use_ytdlp_module():
             return self._download_section_module(url, start_clean, end_clean, output_path)
-        else:
-            return self._download_section_subprocess(url, start_clean, end_clean, output_path)
+        return self._download_section_subprocess(url, start_clean, end_clean, output_path)
     
     def _download_section_module(self, url: str, start_time: str, end_time: str, output_path: str) -> str:
         """Download video section using yt-dlp Python module"""
@@ -1182,7 +1131,7 @@ class DownloadService:
                 debug_log("  Section download finished, processing...")
         
         # Format selector
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._format_selector()
         
         ydl_opts = {
             'format': format_selector,
@@ -1201,10 +1150,7 @@ class DownloadService:
             'force_keyframes_at_cuts': True,
         }
         
-        # Add Deno JS runtime
-        if deno_path and Path(deno_path).exists():
-            ydl_opts['js_runtimes'] = {'deno': {'path': deno_path}}
-            ydl_opts['remote_components'] = ['ejs:github']
+        self._apply_js_runtime_options(ydl_opts, deno_path)
         
         # Add FFmpeg location and GPU args
         if ffmpeg_path and Path(ffmpeg_path).exists():
@@ -1221,18 +1167,7 @@ class DownloadService:
             debug_log(f"    ffmpeg_location: {ydl_opts.get('ffmpeg_location')}")
             debug_log(f"    external_downloader_args: {ydl_opts.get('external_downloader_args', 'none')}")
         
-        # Add cookies
-        from utils.helpers import get_app_dir
-        app_dir = get_app_dir()
-        cookies_path = None
-        for loc in [Path("cookies.txt"), app_dir / "cookies.txt"]:
-            if loc.exists():
-                cookies_path = loc
-                break
-        
-        if not cookies_path:
-            raise Exception("cookies.txt not found!")
-        
+        cookies_path = self._require_cookies_path()
         ydl_opts['cookiefile'] = str(cookies_path)
         
         try:
@@ -1274,7 +1209,7 @@ class DownloadService:
         # Build section string for yt-dlp
         section_str = f"*{start_time}-{end_time}"
         
-        format_selector = "bestvideo[height>=720][height<=2160]+bestaudio/best[height>=720][height<=2160]/bestvideo+bestaudio/best"
+        format_selector = self._format_selector()
         
         cmd = [
             self.ytdlp_path,
@@ -1297,17 +1232,9 @@ class DownloadService:
             
         cmd.extend(["-o", output_path])
         
-        # Add cookies
-        from utils.helpers import get_app_dir
-        app_dir = get_app_dir()
-        cookies_path = None
-        for loc in [Path("cookies.txt"), app_dir / "cookies.txt"]:
-            if loc.exists():
-                cookies_path = str(loc)
-                break
-        
+        cookies_path = self._find_cookies_path()
         if cookies_path:
-            cmd.extend(["--cookies", cookies_path])
+            cmd.extend(["--cookies", str(cookies_path)])
         
         cmd.append(url)
         

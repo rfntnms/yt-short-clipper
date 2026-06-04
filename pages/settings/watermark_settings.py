@@ -1,4 +1,4 @@
-﻿"""
+"""
 Watermark Settings Sub-Page with Canvas Drag & Drop
 """
 

@@ -4,9 +4,10 @@ Clipping page for video clipping workflow
 
 import customtkinter as ctk
 from utils.logger import get_error_log_path
+from utils.ui_helpers import PageNavigationMixin
 
 
-class ClippingPage(ctk.CTkFrame):
+class ClippingPage(PageNavigationMixin, ctk.CTkFrame):
     """Clipping page - shows progress during video clipping"""
     
     def __init__(self, parent, on_cancel_callback, on_back_callback, on_open_output_callback, on_browse_callback):
@@ -17,20 +18,6 @@ class ClippingPage(ctk.CTkFrame):
         self.on_browse = on_browse_callback
         
         self.create_ui()
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name: str):
-        """Navigate to another page"""
-        pass
     
     def create_ui(self):
         """Create the clipping page UI"""

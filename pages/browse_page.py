@@ -14,9 +14,10 @@ from PIL import Image
 import cv2
 
 from dialogs.youtube_upload import YouTubeUploadDialog
+from utils.ui_helpers import PageNavigationMixin, open_folder
 
 
-class BrowsePage(ctk.CTkFrame):
+class BrowsePage(PageNavigationMixin, ctk.CTkFrame):
     """Browse page - view and manage existing videos"""
     
     def __init__(self, parent, config, client, on_back_callback, refresh_icon=None, get_youtube_client=None):
@@ -314,26 +315,4 @@ class BrowsePage(ctk.CTkFrame):
     def open_output_folder(self):
         """Open the output folder"""
         output_dir = Path(self.config.get("output_dir", "output"))
-        if output_dir.exists():
-            if sys.platform == "win32":
-                os.startfile(str(output_dir))
-            elif sys.platform == "darwin":
-                subprocess.run(["open", str(output_dir)])
-            else:
-                subprocess.run(["xdg-open", str(output_dir)])
-        else:
-            messagebox.showerror("Error", "Output folder not found")
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name: str):
-        """Navigate to another page (not used in browse page, but kept for consistency)"""
-        pass
+        open_folder(output_dir, "Output folder not found")

@@ -2,11 +2,10 @@
 Portrait Detection Engine architecture for optimizing subject tracking
 """
 
-import sys
 import numpy as np
 import cv2
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from utils.logger import debug_log
 
 @dataclass

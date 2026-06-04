@@ -2,15 +2,15 @@
 Session Browser Page - Browse and resume previous sessions
 """
 
-import os
 import json
 import customtkinter as ctk
 from pathlib import Path
 from tkinter import messagebox
 from datetime import datetime
+from utils.ui_helpers import PageNavigationMixin, open_folder
 
 
-class SessionBrowserPage(ctk.CTkFrame):
+class SessionBrowserPage(PageNavigationMixin, ctk.CTkFrame):
     """Page for browsing and resuming previous sessions"""
     
     def __init__(self, parent, config, on_back_callback, on_resume_callback, app=None):
@@ -218,18 +218,7 @@ class SessionBrowserPage(ctk.CTkFrame):
     
     def open_folder(self, folder: Path):
         """Open session folder in file explorer"""
-        import sys
-        import subprocess
-        
-        if folder.exists():
-            if sys.platform == "win32":
-                os.startfile(str(folder))
-            elif sys.platform == "darwin":
-                subprocess.run(["open", str(folder)])
-            else:
-                subprocess.run(["xdg-open", str(folder)])
-        else:
-            messagebox.showerror("Error", "Folder not found")
+        open_folder(folder)
     
     def delete_session(self, folder: Path):
         """Delete a session"""
@@ -242,17 +231,3 @@ class SessionBrowserPage(ctk.CTkFrame):
                 messagebox.showinfo("Success", "Session deleted successfully")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete session:\n{str(e)}")
-    
-    def show_page(self, page_name: str):
-        """Navigate to another page (for footer compatibility)"""
-        pass
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")

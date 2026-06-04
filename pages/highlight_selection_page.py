@@ -5,9 +5,10 @@ Highlight Selection Page - User selects which highlights to process
 import customtkinter as ctk
 from pathlib import Path
 from tkinter import messagebox
+from utils.ui_helpers import PageNavigationMixin
 
 
-class HighlightSelectionPage(ctk.CTkFrame):
+class HighlightSelectionPage(PageNavigationMixin, ctk.CTkFrame):
     """Page for selecting highlights to process"""
     
     def __init__(self, parent, on_back_callback, on_process_callback):
@@ -293,17 +294,3 @@ class HighlightSelectionPage(ctk.CTkFrame):
             self.hook_switch.configure(text="ON")
         else:
             self.hook_switch.configure(text="OFF")
-    
-    def show_page(self, page_name: str):
-        """Navigate to another page (for footer compatibility)"""
-        pass
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Repliz Settings Sub-Page
 """
 

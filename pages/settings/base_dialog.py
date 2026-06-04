@@ -3,9 +3,10 @@ Base class for settings sub-pages (embedded in main window)
 """
 
 import customtkinter as ctk
+from utils.ui_helpers import PageNavigationMixin
 
 
-class BaseSettingsSubPage(ctk.CTkFrame):
+class BaseSettingsSubPage(PageNavigationMixin, ctk.CTkFrame):
     """Base class for settings sub-pages"""
     
     def __init__(self, parent, title, on_back_callback):
@@ -74,24 +75,3 @@ class BaseSettingsSubPage(ctk.CTkFrame):
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color=("#27ae60", "#27ae60"), hover_color=("#229954", "#229954"),
             command=command).pack(fill="x", pady=(10, 0))
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name):
-        """Delegate to parent app's show_page method"""
-        try:
-            parent = self.master
-            while parent and not hasattr(parent, 'show_page'):
-                parent = parent.master
-            if parent and hasattr(parent, 'show_page'):
-                parent.show_page(page_name)
-        except:
-            pass

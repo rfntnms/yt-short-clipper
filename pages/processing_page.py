@@ -5,9 +5,10 @@ Processing page for video processing workflow
 import customtkinter as ctk
 from components.progress_step import ProgressStep
 from utils.logger import get_error_log_path
+from utils.ui_helpers import PageNavigationMixin
 
 
-class ProcessingPage(ctk.CTkFrame):
+class ProcessingPage(PageNavigationMixin, ctk.CTkFrame):
     """Processing page - shows progress during video processing"""
     
     def __init__(self, parent, on_cancel_callback, on_back_callback, on_open_output_callback, on_browse_callback):
@@ -18,20 +19,6 @@ class ProcessingPage(ctk.CTkFrame):
         self.on_browse = on_browse_callback
         
         self.create_ui()
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name: str):
-        """Navigate to another page"""
-        pass
     
     def create_ui(self):
         """Create the processing page UI"""

@@ -6,9 +6,10 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 from version import __version__
+from utils.ui_helpers import PageNavigationMixin
 
 
-class SettingsPage(ctk.CTkFrame):
+class SettingsPage(PageNavigationMixin, ctk.CTkFrame):
     """Settings page with card-based navigation to sub-pages"""
     
     def __init__(self, parent, config, on_save_callback, on_back_callback, output_dir, check_update_callback=None):
@@ -171,24 +172,3 @@ class SettingsPage(ctk.CTkFrame):
             self.on_save(updated_config)
     
     # ===== Helper Methods =====
-    
-    def open_github(self):
-        """Open GitHub repository"""
-        import webbrowser
-        webbrowser.open("https://github.com/jipraks/yt-short-clipper")
-    
-    def open_discord(self):
-        """Open Discord server"""
-        import webbrowser
-        webbrowser.open("https://s.id/ytsdiscord")
-    
-    def show_page(self, page_name):
-        """Delegate to parent app's show_page method"""
-        try:
-            parent = self.master
-            while parent and not hasattr(parent, 'show_page'):
-                parent = parent.master
-            if parent and hasattr(parent, 'show_page'):
-                parent.show_page(page_name)
-        except:
-            pass
