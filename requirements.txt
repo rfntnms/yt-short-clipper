@@ -1,18 +1,43 @@
-# Desktop App Dependencies
-customtkinter>=5.2.0
-openai>=1.0.0
-opencv-python>=4.8.0
-numpy>=1.24.0
-Pillow>=10.0.0
-mediapipe>=0.10.0
-requests>=2.31.0
+# YT-Short-Clipper v2 Dependencies
+#
+# This file intentionally replaces the v1 desktop dependency set.
+# v2 target stack:
+#   - Gradio web UI
+#   - OpenAI-compatible AI endpoints
+#   - yt-dlp + FFmpeg runtime
+#   - OpenCV/MediaPipe portrait analysis
+#   - APScheduler for batch scheduling
+#   - pytest toolchain for local validation
+#
+# Runtime note:
+#   FFmpeg is a system binary dependency and must be installed separately.
+#   The Docker image must install ffmpeg via apt/apk, not pip.
+
+# ── Web UI ───────────────────────────────────────────────────────────────
+gradio>=6.1.0,<7.0.0
+
+# ── AI Providers / OpenAI-compatible endpoints ──────────────────────────
+openai>=2.0.0,<3.0.0
+
+# ── Downloading / HTTP helpers ──────────────────────────────────────────
 yt-dlp>=2026.3.17
-curl-cffi>=0.14.0
+requests>=2.31.0,<3.0.0
+curl-cffi>=0.14.0,<1.0.0
 
-# YouTube Upload
-google-api-python-client>=2.100.0
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
+# ── Video / Image Processing ────────────────────────────────────────────
+opencv-python>=4.8.0,<5.0.0
+numpy>=1.24.0,<3.0.0
+Pillow>=10.0.0,<13.0.0
 
-# Optional: Fast GPU Portrait Detection (YOLO)
-# ultralytics>=8.1.0
+# Optional but supported portrait backend.
+# Keep installed in the default environment so config portrait.face_backend="mediapipe"
+# works without a separate extras file.
+mediapipe>=0.10.0,<1.0.0
+
+# ── Scheduling / Batch Processing ───────────────────────────────────────
+APScheduler>=3.10.0,<4.0.0
+
+# ── Testing / Development ───────────────────────────────────────────────
+pytest>=9.0.0,<10.0.0
+pytest-mock>=3.14.0,<4.0.0
+pytest-cov>=6.0.0,<8.0.0
