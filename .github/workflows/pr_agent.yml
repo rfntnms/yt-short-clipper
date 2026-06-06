@@ -25,9 +25,9 @@ jobs:
           OPENAI_KEY: ${{ secrets.NINER_ROUTER_API_KEY }}
           OPENAI__API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}  # e.g. https://your-vps.com/v1
 
-          # Model config
-          config.model: "cx/gpt-5.5-review"
-          config.fallback_models: '["ag/gemini-pro-agent"]'
+          # Model config — prefix openai/ supaya litellm tau ini OpenAI-compatible
+          config.model: "openai/cx/gpt-5.5-review"
+          config.fallback_models: '["openai/ag/gemini-pro-agent"]'
           config.custom_model_max_tokens: "128000"
 
           # Auto-run tools on every PR
@@ -35,5 +35,5 @@ jobs:
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
 
-          # Only trigger on these PR events
+          # Trigger on these PR events
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
