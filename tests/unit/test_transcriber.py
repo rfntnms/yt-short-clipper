@@ -253,3 +253,46 @@ def test_get_client_receives_only_base_url_and_api_key(
     assert "model" not in llm_cfg, "model field must not leak into get_client llm config"
     assert llm_cfg["base_url"] == "http://localhost:9999/v1"
     assert llm_cfg["api_key"] == "test-key"
+
+
+# ── test 12: non-numeric timestamp raises TranscriptionError (not ValueError) ─
+@patch("pipeline.transcriber.get_client")
+def test_raises_on_non_numeric_timestamp(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """float('unknown') raises ValueError; we must surface a typed
+    TranscriptionError so callers see a consistent exception type."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="hi",
+        words=[
+            MagicMock(word="hi", start="unknown", end=1.0),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
+
+    with pytest.raises(TranscriptionError, match="non-numeric word timestamps"):
+        transcribe(video_path, config)
+
+
+# ── test 13: NaN / Inf timestamps rejected ───────────────────────────────
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+@patch("pipeline.transcriber.get_client")
+def test_raises_on_non_finite_timestamp(
+    mock_get_client: MagicMock, video_path: Path, bad_value: float
+) -> None:
+    """NaN/Inf timestamps silently passed through float() and would break
+    downstream highlight/caption logic. They must raise TranscriptionError."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="hi",
+        words=[
+            MagicMock(word="hi", start=bad_value, end=1.0),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
+
+    with pytest.raises(TranscriptionError, match="non-finite word timestamps"):
+        transcribe(video_path, config)

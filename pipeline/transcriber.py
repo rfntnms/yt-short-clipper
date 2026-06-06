@@ -5,6 +5,7 @@ Calls Whisper endpoint via providers/ai_client (ADR-003 compliant).
 Returns word-level JSON: [{"word": str, "start": float, "end": float}, ...]
 """
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -123,8 +124,19 @@ def transcribe(
                 "Transcription response contained invalid word timestamps"
             )
 
-        start = float(raw_start)
-        end = float(raw_end)
+        try:
+            start = float(raw_start)
+            end = float(raw_end)
+        except (TypeError, ValueError) as exc:
+            raise TranscriptionError(
+                "Transcription response contained non-numeric word timestamps"
+            ) from exc
+
+        if not math.isfinite(start) or not math.isfinite(end):
+            raise TranscriptionError(
+                "Transcription response contained non-finite word timestamps"
+            )
+
         if end < start:
             raise TranscriptionError(
                 "Transcription response contained invalid word timestamp order"
