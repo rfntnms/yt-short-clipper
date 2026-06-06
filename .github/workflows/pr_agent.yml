@@ -1,8 +1,8 @@
-# .github/workflows/pr_agent.yml
 name: PR Agent (via 9Router)
+
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, review_requested]
   issue_comment:
 
 jobs:
@@ -13,15 +13,27 @@ jobs:
       issues: write
       pull-requests: write
       contents: write
+    name: Run PR Agent on every pull request, respond to user comments
     steps:
       - name: PR Agent action step
+        id: pragent
         uses: the-pr-agent/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # 9Router endpoint & API key
           OPENAI_KEY: ${{ secrets.NINER_ROUTER_API_KEY }}
-          OPENAI.API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}  # contoh: https://your-vps.com/v1
-          config.model: "cx/gpt-5.5-review"  # sesuaikan model name di 9Router
+          OPENAI__API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}  # e.g. https://your-vps.com/v1
+
+          # Model config
+          config.model: "cx/gpt-5.5-review"
           config.fallback_models: '["ag/gemini-pro-agent"]'
+          config.custom_model_max_tokens: "128000"
+
+          # Auto-run tools on every PR
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
+
+          # Only trigger on these PR events
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
