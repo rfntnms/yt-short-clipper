@@ -20,8 +20,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_KEY: ${{ secrets.NINER_ROUTER_API_KEY }}
           OPENAI.API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}  # contoh: https://your-vps.com/v1
-          config.model: "openai/gpt-4o"  # sesuaikan model name di 9Router
-          config.fallback_models: '["openai/gpt-4o"]'
+          config.model: "cx/gpt-5.5-review"  # sesuaikan model name di 9Router
+          config.fallback_models: '["ag/gemini-pro-agent"]'
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
