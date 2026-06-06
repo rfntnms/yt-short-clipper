@@ -351,3 +351,54 @@ def test_no_direct_openai_import() -> None:
     source = Path(hd.__file__).read_text(encoding="utf-8")
     assert "import openai" not in source
     assert "from openai" not in source
+
+
+# ── test 18: empty choices list → HighlightDetectionError → retry ───────
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_empty_choices(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    """Provider returns response with no choices → treated as malformed."""
+    mock_client = mock_get_client.return_value
+    mock_resp = MagicMock()
+    mock_resp.choices = []
+    mock_client.chat.completions.create.return_value = mock_resp
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    with pytest.raises(HighlightDetectionError, match="no choices"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 19: None content → normalized to "" → retry via parse fail ─────
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_none_content(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    """Provider returns content=None → normalized to '' → parse fails → retry."""
+    mock_client = mock_get_client.return_value
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content=None))]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    with pytest.raises(HighlightDetectionError, match="Malformed LLM response"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 20: non-string content (e.g. int) → normalized via str() ──────
+@patch("pipeline.highlight_detector.get_client")
+def test_normalizes_non_string_content(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    """Provider returns non-string content → str() normalized → parse fails → retry."""
+    mock_client = mock_get_client.return_value
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content=12345))]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    with pytest.raises(HighlightDetectionError, match="Malformed LLM response"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3

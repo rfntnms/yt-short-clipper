@@ -149,6 +149,7 @@ def find_highlights(
     last_error: HighlightDetectionError | None = None
 
     for attempt in range(1 + _MAX_RETRIES):
+        raw_content = ""
         logger.info(
             "Highlight detection attempt %d/%d (model=%s)",
             attempt + 1,
@@ -167,10 +168,23 @@ def find_highlights(
                 f"LLM API call failed: {exc}"
             ) from exc
 
-        raw_content = response.choices[0].message.content
-        logger.debug("Raw LLM response (attempt %d): %s", attempt + 1, raw_content)
-
         try:
+            # Validate response shape: some providers may return no choices at all.
+            choices = getattr(response, "choices", None) or []
+            if not choices:
+                raise HighlightDetectionError("LLM returned no choices in response")
+
+            # Normalize content: some providers may return None or non-string values.
+            # We must normalize before parsing and before appending to messages for
+            # the corrective retry path — otherwise the next API call may reject it.
+            raw_content = choices[0].message.content
+            if raw_content is None:
+                raw_content = ""
+            elif not isinstance(raw_content, str):
+                raw_content = str(raw_content)
+
+            logger.debug("Raw LLM response (attempt %d): %s", attempt + 1, raw_content)
+
             highlights = _parse_highlights(raw_content)
         except (json.JSONDecodeError, HighlightDetectionError) as exc:
             last_error = HighlightDetectionError(
