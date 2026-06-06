@@ -60,13 +60,19 @@ def cut(
     _validate_timestamps(highlight.start, highlight.end)
     duration = highlight.end - highlight.start
 
+    # Use output-side seek + re-encode for frame-accurate cuts.
+    # Input-side -ss with -c copy is fast but keyframe-inaccurate.
     cmd: list[str] = [
         _FFMPEG,
-        "-y",                    # overwrite output
-        "-ss", str(highlight.start),  # seek before input (fast)
+        "-y",
         "-i", video_path,
+        "-ss", str(highlight.start),
         "-t", str(duration),
-        "-c", "copy",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "18",
+        "-c:a", "aac",
+        "-b:a", "128k",
         output_path,
     ]
 
@@ -182,8 +188,24 @@ def probe_dimensions(video_path: str) -> tuple[int, int]:
         if not streams:
             raise VideoProcessingError(f"no video streams found in {video_path}")
 
-        w = int(streams[0]["width"])
-        h = int(streams[0]["height"])
+        stream = streams[0]
+        w = int(stream["width"])
+        h = int(stream["height"])
+
+        # FFmpeg filters see autorotated frames, so dimensions must match rotation
+        rotation = 0
+        tags = stream.get("tags") or {}
+        if "rotate" in tags:
+            rotation = int(tags["rotate"])
+        else:
+            for side_data in stream.get("side_data_list") or []:
+                if "rotation" in side_data:
+                    rotation = int(side_data["rotation"])
+                    break
+
+        if abs(rotation) % 180 == 90:
+            w, h = h, w
+
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise VideoProcessingError(
             f"could not parse ffprobe dimensions for {video_path}: {exc}"

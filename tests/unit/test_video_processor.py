@@ -107,9 +107,9 @@ def test_probe_dimensions_failure_raises(mock_run: MagicMock) -> None:
         probe_dimensions("/missing.mp4")
 
 
-# ── test 7: cut uses seek + duration + codec copy ──────────────────────
+# ── test 7: cut uses accurate seek + re-encode ─────────────────────────
 @patch("pipeline.video_processor.subprocess.run")
-def test_cut_uses_seek_duration_and_copy(
+def test_cut_uses_accurate_seek_and_reencode(
     mock_run: MagicMock, tmp_path: Path
 ) -> None:
     mock_run.return_value = _completed_proc(returncode=0)
@@ -119,15 +119,16 @@ def test_cut_uses_seek_duration_and_copy(
     assert result == str(output)
     args = mock_run.call_args[0][0]
     assert Path(args[0]).name == "ffmpeg"
-    # seek before input (fast)
-    assert "-ss" in args
+    # output-side seek: -i comes before -ss for frame-accurate cut
+    assert args.index("-i") < args.index("-ss")
     assert "10.0" in args
     # duration
     assert "-t" in args
     assert "15.0" in args
-    # codec copy
-    assert "-c" in args
-    assert "copy" in args
+    # re-encode instead of stream copy (keyframe-accurate)
+    assert "-c:v" in args
+    assert "libx264" in args
+    assert "copy" not in args
     # input + output
     assert "/path/in.mp4" in args
     assert str(output) in args
@@ -243,9 +244,6 @@ def test_convert_to_portrait_gpu_flags(
 
     assert result is not None
     args = mock_run.call_args[0][0]
-    # GPU hwaccel flag present
-    assert "-hwaccel" in args
-    assert "cuda" in args
     # NVENC encoder
     assert "h264_nvenc" in args
     # libx264 should NOT be the encoder
@@ -253,6 +251,8 @@ def test_convert_to_portrait_gpu_flags(
     # NVENC uses -cq, not -crf
     assert "-cq" in args
     assert "-crf" not in args
+    # No hwaccel — CPU filters need system-memory frames
+    assert "-hwaccel" not in args
 
 
 # ── test 14: convert_to_portrait — output resolution is 1080x1920 ──────
@@ -402,6 +402,54 @@ def test_center_crop_tall_input_720x1920() -> None:
     # 720 / (9/16) = 720 * 16/9 = 1280.0 → crop to 720x1280
     assert (cw, ch) == (720, 1280)
     assert (cx, cy) == (0, (1920 - 1280) // 2)
+
+
+# ── test 23: probe_dimensions handles 90-degree rotation ────────────────
+@patch("pipeline.video_processor.subprocess.run")
+def test_probe_dimensions_rotated_90(mock_run: MagicMock) -> None:
+    """Phone video stored as 1920x1080 with 90° rotation tag → report as 1080x1920."""
+    mock_run.return_value = _completed_proc(
+        returncode=0,
+        stdout=json.dumps({
+            "streams": [{
+                "width": 1920,
+                "height": 1080,
+                "tags": {"rotate": "-90"},
+            }]
+        }),
+    )
+    w, h = probe_dimensions("/path/to/phone_video.mp4")
+    assert (w, h) == (1080, 1920)
+
+
+# ── test 24: probe_dimensions handles 270-degree rotation ───────────────
+@patch("pipeline.video_processor.subprocess.run")
+def test_probe_dimensions_rotated_270(mock_run: MagicMock) -> None:
+    mock_run.return_value = _completed_proc(
+        returncode=0,
+        stdout=json.dumps({
+            "streams": [{
+                "width": 1920,
+                "height": 1080,
+                "side_data_list": [{"rotation": "270"}],
+            }]
+        }),
+    )
+    w, h = probe_dimensions("/path/to/phone_video.mp4")
+    assert (w, h) == (1080, 1920)
+
+
+# ── test 25: probe_dimensions no rotation ───────────────────────────────
+@patch("pipeline.video_processor.subprocess.run")
+def test_probe_dimensions_no_rotation(mock_run: MagicMock) -> None:
+    mock_run.return_value = _completed_proc(
+        returncode=0,
+        stdout=json.dumps({
+            "streams": [{"width": 1920, "height": 1080}]
+        }),
+    )
+    w, h = probe_dimensions("/path/to/video.mp4")
+    assert (w, h) == (1920, 1080)
 
 
 # ── test 20: output extension is mp4 ────────────────────────────────────

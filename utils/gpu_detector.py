@@ -89,20 +89,20 @@ def get_gpu_flags(gpu_info: dict) -> dict:
     if gpu_info.get('available') and gpu_info.get('h264_nvenc_available'):
         return {
             'encoder': 'h264_nvenc',
-            'hwaccel': ['-hwaccel', 'cuda'],
-            'description': f"Using GPU: {gpu_info.get('name')} (hardware accelerated)"
+            'hwaccel': [],
+            'description': f"Using GPU: {gpu_info.get('name')} (NVENC encoding only, CPU filters)",
         }
     elif gpu_info.get('available') and not gpu_info.get('h264_nvenc_available'):
         return {
             'encoder': 'libx264',
             'hwaccel': [],
-            'description': f"GPU detected ({gpu_info.get('name')}) but nvenc encoder missing, falling back to CPU"
+            'description': f"GPU detected ({gpu_info.get('name')}) but nvenc encoder missing, falling back to CPU",
         }
     else:
         return {
             'encoder': 'libx264',
             'hwaccel': [],
-            'description': "No GPU detected, using CPU"
+            'description': "No GPU detected, using CPU",
         }
 
 __all__ = ['detect_cuda', 'get_gpu_flags']
