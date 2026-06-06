@@ -1,97 +1,80 @@
-"""
-Logging utilities for YT Short Clipper
-"""
-
-import sys
-import os
-import traceback
-from datetime import datetime
+import logging
+import re
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+# Regex patterns for redaction
+API_KEY_PATTERN = re.compile(r'(?i)(api[_-]?key["\']?\s*[:=]\s*["\']?)([^"\',}\s]+)')
+SK_PATTERN = re.compile(r'sk-[a-zA-Z0-9]{20,}')
 
-# Enable console logging when running from terminal (not frozen)
-DEBUG_MODE = not getattr(sys, 'frozen', False)
-
-# Error log file path (will be set by setup_error_logging)
-ERROR_LOG_FILE = None
-
-
-def setup_error_logging(app_dir: Path):
-    """Setup error logging to file
+class SensitiveDataFilter(logging.Filter):
+    """Filter to redact sensitive API keys from log messages."""
     
-    Args:
-        app_dir: Application directory where error.log will be created
-    """
-    global ERROR_LOG_FILE
-    ERROR_LOG_FILE = app_dir / "error.log"
-    
-    # Create log file if not exists
-    if not ERROR_LOG_FILE.exists():
-        ERROR_LOG_FILE.touch()
-    
-    # Redirect stderr to file for uncaught exceptions
-    sys.stderr = ErrorLogWriter(ERROR_LOG_FILE)
+    def filter(self, record):
+        msg = record.getMessage()
+        if isinstance(msg, str):
+            msg = API_KEY_PATTERN.sub(r'\g<1>***REDACTED***', msg)
+            msg = SK_PATTERN.sub('***REDACTED***', msg)
+            record.msg = msg
+            record.args = () # args already interpolated
+        return True
 
-
-class ErrorLogWriter:
-    """Custom writer that writes to both file and devnull"""
+def setup_logger(name: str = "ytclipper", log_dir: str | Path | None = None) -> logging.Logger:
+    """Setup and return a configured logger instance."""
+    logger = logging.getLogger(name)
     
-    def __init__(self, log_file: Path):
-        self.log_file = log_file
-        self.terminal = sys.__stderr__  # Keep reference to original stderr
+    # If already configured (handlers > 0), return it
+    if logger.handlers:
+        return logger
+        
+    logger.setLevel(logging.DEBUG)
     
-    def write(self, message):
-        """Write message to log file"""
-        if message.strip():  # Only write non-empty messages
-            try:
-                with open(self.log_file, 'a', encoding='utf-8') as f:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    f.write(f"[{timestamp}] {message}")
-                    if not message.endswith('\n'):
-                        f.write('\n')
-            except Exception:
-                pass  # Silently fail if can't write to log
+    # Formatter
+    formatter = logging.Formatter(
+        '[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
-    def flush(self):
-        """Flush - required for file-like object"""
-        pass
-
-
-def debug_log(msg):
-    """Log to console only in debug mode (running from terminal)"""
-    if DEBUG_MODE:
-        print(f"[DEBUG] {msg}")
-
-
-def log_error(error_msg: str, exception: Exception = None):
-    """Log error to file with timestamp and traceback
+    redact_filter = SensitiveDataFilter()
     
-    Args:
-        error_msg: Human-readable error message
-        exception: Optional exception object to log traceback
-    """
-    if ERROR_LOG_FILE is None:
-        return
+    # Resolve log directory
+    if log_dir is None:
+        # Default to ./output in project root or current dir
+        log_dir = Path.cwd()
+    
+    log_path = Path(log_dir) / "app.log"
+    
+    # Ensure directory exists immediately before creating handler
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        with open(ERROR_LOG_FILE, 'a', encoding='utf-8') as f:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"\n{'='*80}\n")
-            f.write(f"[{timestamp}] ERROR\n")
-            f.write(f"{'='*80}\n")
-            f.write(f"{error_msg}\n")
-            
-            if exception:
-                f.write(f"\nException Type: {type(exception).__name__}\n")
-                f.write(f"Exception Message: {str(exception)}\n")
-                f.write(f"\nTraceback:\n")
-                f.write(traceback.format_exc())
-            
-            f.write(f"{'='*80}\n\n")
-    except Exception:
-        pass  # Silently fail if can't write to log
+        file_handler = RotatingFileHandler(
+            str(log_path), 
+            maxBytes=10*1024*1024, 
+            backupCount=3,
+            encoding='utf-8'
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(redact_filter)
+        logger.addHandler(file_handler)
+    except Exception as e:
+        # Fallback if file system is read-only or path is invalid
+        print(f"Failed to setup file logging at {log_path}: {e}")
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO) # Console is less verbose
+    console_handler.setFormatter(formatter)
+    console_handler.addFilter(redact_filter)
+    logger.addHandler(console_handler)
+    
+    # Prevent propagation to root logger
+    logger.propagate = False
+    
+    return logger
 
+# Global logger instance exported
+logger = setup_logger()
 
-def get_error_log_path() -> Path:
-    """Get the path to error log file"""
-    return ERROR_LOG_FILE
+__all__ = ['logger', 'setup_logger']
