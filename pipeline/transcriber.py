@@ -38,11 +38,12 @@ def transcribe(
     transcription_cfg: dict[str, Any] = config.get("transcription", {})
     model: str = transcription_cfg.get("model", "whisper-1")
 
-    # Skip expensive API call if downloader already produced captions.
+    # Downloader may have produced an .srt, but we still need word-level
+    # JSON so downstream steps (highlight_detector, caption_generator) get
+    # timed word data. Log the skip candidate but continue to Whisper call.
     expected_srt = video_path.with_suffix(".srt")
     if expected_srt.exists():
-        logger.info("Skipping transcription because SRT already exists: %s", expected_srt.name)
-        return []
+        logger.info("Existing SRT found, but word-level transcription is still required: %s", expected_srt.name)
 
     # Reuse the generic OpenAI-compatible client factory (ADR-003).
     # get_client() currently reads config["llm"], so adapt transcription config into
@@ -87,6 +88,15 @@ def transcribe(
                 segment_words = getattr(segment, "words", []) or []
             aggregated.extend(segment_words)
         raw_words = aggregated
+
+    if not raw_words:
+        # Both top-level response.words and segments[].words were missing.
+        # Surface a typed error so callers do not proceed with an apparently
+        # successful but unusable transcription (no word timestamps to drive
+        # highlight detection or caption generation).
+        raise TranscriptionError(
+            "Transcription response did not include word-level timestamps"
+        )
 
     words: list[dict[str, Any]] = []
     for w in raw_words or []:

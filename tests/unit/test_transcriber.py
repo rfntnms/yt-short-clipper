@@ -124,9 +124,61 @@ def test_handles_dict_response_with_segments(
         ],
     }
 
-    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "test"}}
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
     result = transcribe(video_path, config)
 
     assert len(result) == 2
     assert result[0]["word"] == "foo"
     assert result[1]["word"] == "bar"
+
+
+# ── test 7: existing SRT does NOT skip word-level transcription ─────────
+@patch("pipeline.transcriber.get_client")
+def test_existing_srt_does_not_skip_whisper(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """Contract guard: even if downloader produced an .srt, transcribe must
+    still call Whisper to obtain word-level JSON. Returning [] would break
+    downstream highlight/caption stages that expect timed word data."""
+    # Pre-create a sibling .srt file the way the downloader would.
+    srt_path = video_path.with_suffix(".srt")
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello world\n")
+
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="hello world",
+        words=[
+            MagicMock(word="hello", start=0.0, end=0.5),
+            MagicMock(word="world", start=0.5, end=1.0),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
+    result = transcribe(video_path, config)
+
+    # Whisper was called despite the SRT being on disk.
+    mock_client.audio.transcriptions.create.assert_called_once()
+    assert len(result) == 2
+    assert result[0]["word"] == "hello"
+
+
+# ── test 8: missing word timestamps raises TranscriptionError ───────────
+@patch("pipeline.transcriber.get_client")
+def test_raises_when_no_word_timestamps(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """If the provider succeeds but returns neither top-level words nor
+    segments[].words, surface a typed error instead of silently returning []."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="...",
+        words=None,           # no top-level words
+        segments=[            # segments exist but with no words
+            MagicMock(id=0, words=None),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
+
+    with pytest.raises(TranscriptionError, match="word-level timestamps"):
+        transcribe(video_path, config)
