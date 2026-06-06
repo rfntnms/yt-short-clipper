@@ -20,7 +20,15 @@ def temp_output(tmp_path: Path) -> Path:
 # ── test 1: returns correct paths on success ────────────────────────────
 @patch("pipeline.downloader.yt_dlp.YoutubeDL")
 def test_download_success(mock_ytdl_cls: MagicMock, temp_output: Path) -> None:
-    # Setup mock yt-dlp to pretend it succeeded
+    video_path_str = str(temp_output / "Test Video.mp4")
+    srt_path_str = str(temp_output / "Test Video.en.srt")
+
+    def _prepare_filename(*args: object, **kwargs: object) -> str:
+        # yt-dlp prepare_filename receives (info_dict, subtitle=None)
+        if kwargs.get("subtitle") == "en":
+            return srt_path_str
+        return video_path_str
+
     mock_instance = mock_ytdl_cls.return_value
     mock_instance.__enter__.return_value = mock_instance
     mock_instance.extract_info.return_value = {
@@ -28,21 +36,21 @@ def test_download_success(mock_ytdl_cls: MagicMock, temp_output: Path) -> None:
         "title": "Test Video",
         "ext": "mp4",
         "requested_subtitles": {
-            "en": {"ext": "vtt", "url": "https://example.com/sub.vtt"}
+            "en": {"ext": "srt", "url": "https://example.com/sub.srt"},
         },
     }
-    mock_instance.prepare_filename.return_value = str(temp_output / "Test Video.mp4")
+    mock_instance.prepare_filename.side_effect = _prepare_filename
 
-    # Call the downloader
+    # Create the video file so existence check passes
+    Path(video_path_str).write_text("dummy video")
+
     video_path, srt_path = download("https://youtube.com/watch?v=abc123xyz", temp_output)
 
-    # Assertions
     assert isinstance(video_path, Path)
     assert video_path.name == "Test Video.mp4"
     assert video_path.parent == temp_output
-    # srt_path is returned from requested_subtitles side-effect (converted to .srt conceptually)
     assert srt_path is not None
-    assert srt_path.name.endswith(".srt")
+    assert srt_path.name == "Test Video.en.srt"
 
 
 # ── test 2: raises typed DownloadError on yt-dlp exception ───────────────
@@ -50,7 +58,6 @@ def test_download_success(mock_ytdl_cls: MagicMock, temp_output: Path) -> None:
 def test_download_raises_downloaderror(mock_ytdl_cls: MagicMock, temp_output: Path) -> None:
     mock_instance = mock_ytdl_cls.return_value
     mock_instance.__enter__.return_value = mock_instance
-    # Simulate network failure or invalid URL
     mock_instance.extract_info.side_effect = YTDlpError("Sign in to confirm you're not a bot")
 
     with pytest.raises(DownloadError, match="Sign in to confirm"):
@@ -60,6 +67,8 @@ def test_download_raises_downloaderror(mock_ytdl_cls: MagicMock, temp_output: Pa
 # ── test 3: uses cookies.txt when provided ──────────────────────────────
 @patch("pipeline.downloader.yt_dlp.YoutubeDL")
 def test_download_uses_cookies(mock_ytdl_cls: MagicMock, temp_output: Path) -> None:
+    video_path_str = str(temp_output / "Test Video.mp4")
+
     mock_instance = mock_ytdl_cls.return_value
     mock_instance.__enter__.return_value = mock_instance
     mock_instance.extract_info.return_value = {
@@ -67,7 +76,10 @@ def test_download_uses_cookies(mock_ytdl_cls: MagicMock, temp_output: Path) -> N
         "title": "Test Video",
         "ext": "mp4",
     }
-    mock_instance.prepare_filename.return_value = str(temp_output / "Test Video.mp4")
+    mock_instance.prepare_filename.return_value = video_path_str
+
+    # Create the video file so existence check passes
+    Path(video_path_str).write_text("dummy video")
 
     cookies_path = temp_output / "cookies.txt"
     cookies_path.write_text("dummy cookies")
@@ -75,7 +87,6 @@ def test_download_uses_cookies(mock_ytdl_cls: MagicMock, temp_output: Path) -> N
     download("https://youtube.com/watch?v=abc123xyz", temp_output, cookies_path=cookies_path)
 
     # Verify YoutubeDL was instantiated with cookiefile inside the params dict
-    # (yt-dlp's YoutubeDL constructor accepts `params` as a positional argument)
     call_args = mock_ytdl_cls.call_args
     params = call_args.args[0] if call_args.args else call_args.kwargs.get("params", {})
     assert params.get("cookiefile") == str(cookies_path)
@@ -84,15 +95,20 @@ def test_download_uses_cookies(mock_ytdl_cls: MagicMock, temp_output: Path) -> N
 # ── test 4: handles no subtitles gracefully ────────────────────────────
 @patch("pipeline.downloader.yt_dlp.YoutubeDL")
 def test_download_no_subtitles(mock_ytdl_cls: MagicMock, temp_output: Path) -> None:
+    video_path_str = str(temp_output / "Test Video.mp4")
+
     mock_instance = mock_ytdl_cls.return_value
     mock_instance.__enter__.return_value = mock_instance
     mock_instance.extract_info.return_value = {
         "id": "abc123xyz",
         "title": "Test Video",
         "ext": "mp4",
-        "requested_subtitles": None, # No subtitles available
+        "requested_subtitles": None,  # No subtitles available
     }
-    mock_instance.prepare_filename.return_value = str(temp_output / "Test Video.mp4")
+    mock_instance.prepare_filename.return_value = video_path_str
+
+    # Create the video file so existence check passes
+    Path(video_path_str).write_text("dummy video")
 
     video_path, srt_path = download("https://youtube.com/watch?v=abc123xyz", temp_output)
 
