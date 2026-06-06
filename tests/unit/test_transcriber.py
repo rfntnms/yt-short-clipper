@@ -182,3 +182,74 @@ def test_raises_when_no_word_timestamps(
 
     with pytest.raises(TranscriptionError, match="word-level timestamps"):
         transcribe(video_path, config)
+
+
+# ── test 9: invalid word entry (missing start) raises TranscriptionError ─
+@patch("pipeline.transcriber.get_client")
+def test_raises_on_invalid_word_missing_start(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """A word dict with start=None must not silently become 0.0."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="hi",
+        words=[
+            MagicMock(word="hi", start=None, end=1.0),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
+
+    with pytest.raises(TranscriptionError, match="invalid word timestamps"):
+        transcribe(video_path, config)
+
+
+# ── test 10: invalid word entry (end < start) raises TranscriptionError ──
+@patch("pipeline.transcriber.get_client")
+def test_raises_on_invalid_word_timestamp_order(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """end < start is a corrupt timestamp; raise rather than propagate."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="hi",
+        words=[
+            MagicMock(word="hi", start=2.0, end=1.0),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "***"}}
+
+    with pytest.raises(TranscriptionError, match="invalid word timestamp order"):
+        transcribe(video_path, config)
+
+
+# ── test 11: get_client called with sanitized config (no model leak) ─────
+@patch("pipeline.transcriber.get_client")
+def test_get_client_receives_only_base_url_and_api_key(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """Ensure transcription_cfg.model does NOT leak into get_client's llm dict.
+    get_client() should receive only base_url + api_key so transcription model
+    is never interpreted as an LLM model."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="ok",
+        words=[MagicMock(word="ok", start=0.0, end=1.0)],
+    )
+
+    config = {
+        "transcription": {
+            "base_url": "http://localhost:9999/v1",
+            "model": "whisper-1",
+            "api_key": "test-key",
+        }
+    }
+    transcribe(video_path, config)
+
+    mock_get_client.assert_called_once()
+    call_arg = mock_get_client.call_args[0]
+    llm_cfg = call_arg[0]["llm"]
+    assert "model" not in llm_cfg, "model field must not leak into get_client llm config"
+    assert llm_cfg["base_url"] == "http://localhost:9999/v1"
+    assert llm_cfg["api_key"] == "test-key"

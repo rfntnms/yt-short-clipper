@@ -46,9 +46,17 @@ def transcribe(
         logger.info("Existing SRT found, but word-level transcription is still required: %s", expected_srt.name)
 
     # Reuse the generic OpenAI-compatible client factory (ADR-003).
-    # get_client() currently reads config["llm"], so adapt transcription config into
-    # that shape without importing openai directly here.
-    client = get_client({"llm": transcription_cfg})
+    # get_client() only reads llm.base_url and llm.api_key, but pass only
+    # those keys explicitly so a transcription-only "model" field cannot
+    # leak into client construction if get_client()'s contract expands.
+    client = get_client(
+        {
+            "llm": {
+                "base_url": transcription_cfg.get("base_url"),
+                "api_key": transcription_cfg.get("api_key", "ollama"),
+            }
+        }
+    )
 
     logger.info("Starting transcription for %s (model=%s)", video_path.name, model)
 
@@ -102,14 +110,27 @@ def transcribe(
     for w in raw_words or []:
         # Support both attribute-style (dataclass) and dict-style access
         if isinstance(w, dict):
-            word_text: str = w.get("word", "")
-            start: float = float(w.get("start", 0.0))
-            end: float = float(w.get("end", 0.0))
+            word_text = str(w.get("word", "")).strip()
+            raw_start = w.get("start")
+            raw_end = w.get("end")
         else:
-            word_text = getattr(w, "word", "")
-            start = float(getattr(w, "start", 0.0))
-            end = float(getattr(w, "end", 0.0))
-        words.append({"word": word_text.strip(), "start": start, "end": end})
+            word_text = str(getattr(w, "word", "")).strip()
+            raw_start = getattr(w, "start", None)
+            raw_end = getattr(w, "end", None)
+
+        if not word_text or raw_start is None or raw_end is None:
+            raise TranscriptionError(
+                "Transcription response contained invalid word timestamps"
+            )
+
+        start = float(raw_start)
+        end = float(raw_end)
+        if end < start:
+            raise TranscriptionError(
+                "Transcription response contained invalid word timestamp order"
+            )
+
+        words.append({"word": word_text, "start": start, "end": end})
 
     logger.info("Transcription complete: %d words", len(words))
     return words
