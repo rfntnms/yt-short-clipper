@@ -64,21 +64,42 @@ def transcribe(
         raise TranscriptionError(str(exc)) from exc
 
     # Build word-level JSON from Whisper response.
-    # Whisper verbose_json may expose words via response.words or response.segments.
-    words: list[dict[str, Any]] = []
-    raw_words = getattr(response, "words", None)
-    if raw_words:
-        for w in raw_words:
-            # Support both attribute-style (dataclass) and dict-style access
-            if isinstance(w, dict):
-                word_text: str = w.get("word", "")
-                start: float = float(w.get("start", 0.0))
-                end: float = float(w.get("end", 0.0))
+    # Whisper verbose_json may expose words via response.words (top-level) or
+    # nested inside response.segments[].words. The OpenAI Whisper API returns
+    # top-level words when timestamp_granularities=["word"], but several
+    # OpenAI-compatible providers (faster-whisper-server, whisper.cpp, Groq
+    # whisper-turbo) only return words nested in segments. Normalize both
+    # shapes so we never silently return an empty list on a successful call.
+    if isinstance(response, dict):
+        raw_words = response.get("words")
+        raw_segments = response.get("segments", []) or []
+    else:
+        raw_words = getattr(response, "words", None)
+        raw_segments = getattr(response, "segments", []) or []
+
+    if not raw_words:
+        # Fall back: aggregate words from segments[].words
+        aggregated: list[Any] = []
+        for segment in raw_segments:
+            if isinstance(segment, dict):
+                segment_words = segment.get("words", []) or []
             else:
-                word_text = getattr(w, "word", "")
-                start = float(getattr(w, "start", 0.0))
-                end = float(getattr(w, "end", 0.0))
-            words.append({"word": word_text.strip(), "start": start, "end": end})
+                segment_words = getattr(segment, "words", []) or []
+            aggregated.extend(segment_words)
+        raw_words = aggregated
+
+    words: list[dict[str, Any]] = []
+    for w in raw_words or []:
+        # Support both attribute-style (dataclass) and dict-style access
+        if isinstance(w, dict):
+            word_text: str = w.get("word", "")
+            start: float = float(w.get("start", 0.0))
+            end: float = float(w.get("end", 0.0))
+        else:
+            word_text = getattr(w, "word", "")
+            start = float(getattr(w, "start", 0.0))
+            end = float(getattr(w, "end", 0.0))
+        words.append({"word": word_text.strip(), "start": start, "end": end})
 
     logger.info("Transcription complete: %d words", len(words))
     return words

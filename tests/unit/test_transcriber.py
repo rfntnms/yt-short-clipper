@@ -75,3 +75,58 @@ def test_uses_ai_client(mock_get_client: MagicMock, video_path: Path) -> None:
     transcribe(video_path, config)
 
     mock_get_client.assert_called_once()
+
+
+# ── test 5: aggregates words from segments[].words when top-level empty ──
+@patch("pipeline.transcriber.get_client")
+def test_aggregates_words_from_segments(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """Covers OpenAI-compatible providers (faster-whisper-server, whisper.cpp,
+    Groq whisper-turbo) that return words nested in segments instead of
+    top-level response.words."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = MagicMock(
+        text="hello world",
+        words=None,  # top-level words missing
+        segments=[
+            MagicMock(
+                id=0,
+                words=[
+                    MagicMock(word="hello", start=0.0, end=0.5),
+                    MagicMock(word="world", start=0.5, end=1.0),
+                ],
+            ),
+        ],
+    )
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "test"}}
+    result = transcribe(video_path, config)
+
+    assert len(result) == 2
+    assert result[0]["word"] == "hello"
+    assert result[1]["word"] == "world"
+
+
+# ── test 6: handles dict-style response with segments ───────────────────
+@patch("pipeline.transcriber.get_client")
+def test_handles_dict_response_with_segments(
+    mock_get_client: MagicMock, video_path: Path
+) -> None:
+    """Some OpenAI-compatible proxy/echo setups return raw dicts."""
+    mock_client = mock_get_client.return_value
+    mock_client.audio.transcriptions.create.return_value = {
+        "text": "foo bar",
+        "words": None,
+        "segments": [
+            {"id": 0, "words": [{"word": "foo", "start": 0.0, "end": 0.3}]},
+            {"id": 1, "words": [{"word": "bar", "start": 0.3, "end": 0.7}]},
+        ],
+    }
+
+    config = {"transcription": {"base_url": "http://localhost:9999/v1", "model": "whisper-1", "api_key": "test"}}
+    result = transcribe(video_path, config)
+
+    assert len(result) == 2
+    assert result[0]["word"] == "foo"
+    assert result[1]["word"] == "bar"
