@@ -21,11 +21,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # 9Router endpoint & API key
+          # 9Router - OpenAI-compatible endpoint
+          # NINER_ROUTER_BASE_URL harus berakhiran /v1, contoh: https://your-vps.com/v1
           OPENAI_KEY: ${{ secrets.NINER_ROUTER_API_KEY }}
-          OPENAI__API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}  # e.g. https://your-vps.com/v1
+          OPENAI__API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}
 
-          # Model config — prefix openai/ supaya litellm tau ini OpenAI-compatible
+          # Model config
+          # Prefix openai/ WAJIB ada agar litellm tau ini OpenAI-compatible endpoint
           config.model: "openai/cx/gpt-5.5-review"
           config.fallback_models: '["openai/ag/gemini-pro-agent"]'
           config.custom_model_max_tokens: "128000"
@@ -34,6 +36,4 @@ jobs:
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
-
-          # Trigger on these PR events
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
