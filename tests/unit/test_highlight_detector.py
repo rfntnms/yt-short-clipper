@@ -321,7 +321,29 @@ def test_retry_on_invalid_score(
     assert mock_client.chat.completions.create.call_count == 3
 
 
-# ── test 16: no direct openai import (uses get_client only) ─────────────
+# ── test 16: NaN timestamp passes float() but not math.isfinite → retry ──
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_nan_timestamp(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    """NaN passes float() and NaN<0 is False, so must catch via isfinite."""
+    mock_client = mock_get_client.return_value
+    # json.loads accepts NaN literal
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(
+            message=MagicMock(
+                content='[{"start": NaN, "end": 30.0, "hook_text": "x", "score": 5}]'
+            )
+        )]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    with pytest.raises(HighlightDetectionError, match="invalid time range"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 17: no direct openai import (uses get_client only) ─────────────
 def test_no_direct_openai_import() -> None:
     """Static guard: the module must not import openai directly."""
     import pipeline.highlight_detector as hd

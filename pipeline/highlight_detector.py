@@ -5,6 +5,7 @@ Sends transcript + system prompt to LLM, parses JSON response into
 List[Highlight] sorted by score. ADR-005 compliant.
 """
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -94,7 +95,12 @@ def _parse_highlights(raw: Any) -> list[Highlight]:
                 f"Highlight entry {i} has invalid field types: {exc}"
             ) from exc
 
-        if highlight.start < 0 or highlight.end <= highlight.start:
+        if (
+            not math.isfinite(highlight.start)
+            or not math.isfinite(highlight.end)
+            or highlight.start < 0
+            or highlight.end <= highlight.start
+        ):
             raise HighlightDetectionError(
                 f"Highlight entry {i} has invalid time range: "
                 f"{highlight.start}..{highlight.end}"
