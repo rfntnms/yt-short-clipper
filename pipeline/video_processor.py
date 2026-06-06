@@ -122,6 +122,14 @@ def convert_to_portrait(
     hwaccel = flags.get("hwaccel", [])
     encoder = flags.get("encoder", "libx264")
 
+    # Quality flag must match the encoder family:
+    #   libx264      → -crf (constant rate factor)
+    #   h264_nvenc   → -cq  (constant quality; -crf is rejected)
+    if encoder == "h264_nvenc":
+        quality_args = ["-cq", "23"]
+    else:
+        quality_args = ["-crf", "23"]
+
     cmd: list[str] = [
         _FFMPEG,
         "-y",
@@ -130,7 +138,7 @@ def convert_to_portrait(
         "-vf", vf,
         "-c:v", encoder,
         "-preset", "medium",
-        "-crf", "23",
+        *quality_args,
         "-c:a", "copy",
         output_path,
     ]
@@ -168,13 +176,19 @@ def probe_dimensions(video_path: str) -> tuple[int, int]:
 
     import json
 
-    data = json.loads(proc.stdout)
-    streams = data.get("streams", [])
-    if not streams:
-        raise VideoProcessingError(f"no video streams found in {video_path}")
+    try:
+        data = json.loads(proc.stdout)
+        streams = data.get("streams", [])
+        if not streams:
+            raise VideoProcessingError(f"no video streams found in {video_path}")
 
-    w = int(streams[0]["width"])
-    h = int(streams[0]["height"])
+        w = int(streams[0]["width"])
+        h = int(streams[0]["height"])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise VideoProcessingError(
+            f"could not parse ffprobe dimensions for {video_path}: {exc}"
+        ) from exc
+
     return w, h
 
 
@@ -195,11 +209,15 @@ def compute_center_crop(
     if src_aspect > target_aspect:
         # Source is wider than 9:16 → crop width
         crop_h = src_height
-        crop_w = int(src_height * target_aspect)  # truncate, don't round up
+        crop_w = int(src_height * target_aspect)
     else:
-        # Source is already 9:16 or taller → use full width
+        # Source is taller than 9:16 → crop height
         crop_w = src_width
-        crop_h = src_height
+        crop_h = int(src_width / target_aspect)
+
+    # Round down to even values — required for YUV 4:2:0 pixel formats.
+    crop_w = max(2, crop_w - (crop_w % 2))
+    crop_h = max(2, crop_h - (crop_h % 2))
 
     crop_x = (src_width - crop_w) // 2
     crop_y = (src_height - crop_h) // 2

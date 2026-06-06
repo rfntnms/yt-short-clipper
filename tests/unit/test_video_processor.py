@@ -53,7 +53,7 @@ def fake_config() -> dict:
 def test_center_crop_wide_input() -> None:
     """1920x1080 → crop width to 9:16, full height kept."""
     cw, ch, cx, cy = compute_center_crop(1920, 1080)
-    assert (cw, ch) == (607, 1080)  # 1080 * 9/16 = 607.5 → int truncates
+    assert (cw, ch) == (606, 1080)  # 1080 * 9/16 = 607.5 → even crop 606
     assert cx == (1920 - cw) // 2
     assert cy == 0
 
@@ -79,7 +79,7 @@ def test_center_crop_square_input() -> None:
 def test_center_crop_ultrawide_input() -> None:
     """3840x1080 → heavy horizontal crop to 9:16."""
     cw, ch, cx, cy = compute_center_crop(3840, 1080)
-    assert cw == 607
+    assert cw == 606
     assert ch == 1080
     assert cy == 0
     assert cx > 0
@@ -250,6 +250,9 @@ def test_convert_to_portrait_gpu_flags(
     assert "h264_nvenc" in args
     # libx264 should NOT be the encoder
     assert "libx264" not in args
+    # NVENC uses -cq, not -crf
+    assert "-cq" in args
+    assert "-crf" not in args
 
 
 # ── test 14: convert_to_portrait — output resolution is 1080x1920 ──────
@@ -336,6 +339,8 @@ def test_convert_to_portrait_falls_back_to_cpu_when_nvenc_missing(
     assert "libx264" in args
     assert "h264_nvenc" not in args
     assert "-hwaccel" not in args
+    # libx264 uses -crf
+    assert "-crf" in args
 
 
 # ── test 17: convert_to_portrait — probe failure raises immediately ────
@@ -380,6 +385,23 @@ def test_convert_to_portrait_uses_shell_false() -> None:
     source = inspect.getsource(video_processor)
     import re
     assert not re.search(r"subprocess\.run\([^)]*shell\s*=\s*True", source)
+
+
+# ── test 21: probe_dimensions bad JSON handling ─────────────────────────
+@patch("pipeline.video_processor.subprocess.run")
+def test_probe_dimensions_bad_json(mock_run: MagicMock) -> None:
+    mock_run.return_value = _completed_proc(returncode=0, stdout='{"streams": [{}]}')
+    with pytest.raises(VideoProcessingError, match="could not parse"):
+        probe_dimensions("/path.mp4")
+
+
+# ── test 22: center crop for tall input (720x1920) crops height ─────────
+def test_center_crop_tall_input_720x1920() -> None:
+    """720x1920 (6:16) is taller than 9:16 → crop height to match 9:16 at 720 width."""
+    cw, ch, cx, cy = compute_center_crop(720, 1920)
+    # 720 / (9/16) = 720 * 16/9 = 1280.0 → crop to 720x1280
+    assert (cw, ch) == (720, 1280)
+    assert (cx, cy) == (0, (1920 - 1280) // 2)
 
 
 # ── test 20: output extension is mp4 ────────────────────────────────────
