@@ -101,9 +101,9 @@ def test_get_gpu_flags_uses_nvenc_when_available():
         'name': 'RTX 3090', 
         'h264_nvenc_available': True
     })
-    assert flags['encoder'] == 'h264_nvenc'
-    assert flags['hwaccel'] == ['-hwaccel', 'cuda']
-    assert 'RTX 3090' in flags['description']
+    assert flags["encoder"] == "h264_nvenc"
+    assert "-hwaccel" not in flags["hwaccel"]
+    assert "NVENC encoding only" in flags["description"]
 
 
 def test_get_gpu_flags_falls_back_when_nvenc_missing():
