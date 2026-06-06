@@ -27,10 +27,14 @@ jobs:
           OPENAI__API_BASE: ${{ secrets.NINER_ROUTER_BASE_URL }}
 
           # Model config
-          # Prefix openai/ WAJIB ada agar litellm tau ini OpenAI-compatible endpoint
           config.model: "openai/cx/gpt-5.5-review"
           config.fallback_models: '["openai/ag/gemini-pro-agent"]'
           config.custom_model_max_tokens: "128000"
+
+          # Fix: gpt-5 class models tidak support temperature != 1
+          # drop_params supaya litellm otomatis drop param yang tidak didukung model
+          config.temperature: "1"
+          LITELLM.DROP_PARAMS: "true"
 
           # Auto-run tools on every PR
           github_action_config.auto_review: "true"
