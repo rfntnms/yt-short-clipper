@@ -214,7 +214,114 @@ def test_strips_markdown_code_fences(
     assert result[0].hook_text == "fenced"
 
 
-# ── test 10: no direct openai import (uses get_client only) ──────────────
+# ── test 11: single-line code fence like ```[]``` ────────────────────────
+@patch("pipeline.highlight_detector.get_client")
+def test_handles_single_line_fence(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    """Single-line fence like ```[]``` should not raise ValueError."""
+    mock_client = mock_get_client.return_value
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="```[]```"))]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    result = find_highlights("transcript", config)
+
+    assert result == []
+    # Must have been parsed on first attempt — no retries.
+    assert mock_client.chat.completions.create.call_count == 1
+
+
+# ── test 12: non-numeric field values trigger retry ──────────────────────
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_invalid_field_types(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    """start=\"abc\" raises ValueError in float() → retried, not raw exception."""
+    mock_client = mock_get_client.return_value
+    bad_json = json.dumps([{"start": "abc", "end": 30.0, "hook_text": "x", "score": 5}])
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content=bad_json))]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+
+    with pytest.raises(HighlightDetectionError, match="Malformed LLM response"):
+        find_highlights("transcript", config)
+
+    # Retries exhausted.
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 13: negative start raises HighlightDetectionError → retry ──────
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_negative_start(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    mock_client = mock_get_client.return_value
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(
+            message=MagicMock(
+                content=json.dumps(
+                    [{"start": -5.0, "end": 30.0, "hook_text": "x", "score": 5}]
+                )
+            )
+        )]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+
+    with pytest.raises(HighlightDetectionError, match="invalid time range"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 14: end <= start raises HighlightDetectionError → retry ─────────
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_end_before_start(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    mock_client = mock_get_client.return_value
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(
+            message=MagicMock(
+                content=json.dumps(
+                    [{"start": 30.0, "end": 0.0, "hook_text": "x", "score": 5}]
+                )
+            )
+        )]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    with pytest.raises(HighlightDetectionError, match="invalid time range"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 15: score outside 1-10 raises HighlightDetectionError → retry ───
+@patch("pipeline.highlight_detector.get_client")
+def test_retry_on_invalid_score(
+    mock_get_client: MagicMock, fake_prompt: str
+) -> None:
+    mock_client = mock_get_client.return_value
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(
+            message=MagicMock(
+                content=json.dumps(
+                    [{"start": 0.0, "end": 30.0, "hook_text": "x", "score": 999}]
+                )
+            )
+        )]
+    )
+
+    config = {"llm": {"base_url": "http://localhost:9999/v1", "model": "gpt-4", "api_key": "***"}}
+    with pytest.raises(HighlightDetectionError, match="invalid score"):
+        find_highlights("transcript", config)
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+# ── test 16: no direct openai import (uses get_client only) ─────────────
 def test_no_direct_openai_import() -> None:
     """Static guard: the module must not import openai directly."""
     import pipeline.highlight_detector as hd

@@ -55,9 +55,10 @@ def _parse_highlights(raw: Any) -> list[Highlight]:
     if isinstance(raw, str):
         text = raw.strip()
         if text.startswith("```"):
-            # Remove opening fence (optionally with language tag)
-            first_newline = text.index("\n")
-            text = text[first_newline + 1 :]
+            # Remove opening fence (optionally with language tag).
+            # Use partition so single-line fences like ```[]``` don't raise.
+            _, sep, remainder = text.partition("\n")
+            text = remainder if sep else text.removeprefix("```")
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
@@ -81,14 +82,29 @@ def _parse_highlights(raw: Any) -> list[Highlight]:
             raise HighlightDetectionError(
                 f"Highlight entry {i} missing fields: {sorted(missing)}"
             )
-        highlights.append(
-            Highlight(
+        try:
+            highlight = Highlight(
                 start=float(entry["start"]),
                 end=float(entry["end"]),
                 hook_text=str(entry["hook_text"]),
                 score=int(entry["score"]),
             )
-        )
+        except (TypeError, ValueError) as exc:
+            raise HighlightDetectionError(
+                f"Highlight entry {i} has invalid field types: {exc}"
+            ) from exc
+
+        if highlight.start < 0 or highlight.end <= highlight.start:
+            raise HighlightDetectionError(
+                f"Highlight entry {i} has invalid time range: "
+                f"{highlight.start}..{highlight.end}"
+            )
+        if not (1 <= highlight.score <= 10):
+            raise HighlightDetectionError(
+                f"Highlight entry {i} has invalid score: {highlight.score}"
+            )
+
+        highlights.append(highlight)
 
     return highlights
 
