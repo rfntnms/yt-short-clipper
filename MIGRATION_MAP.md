@@ -20,7 +20,7 @@ The 3379-line monolith is broken into modular pipeline steps:
 |----------------|------------------|--------|-------|
 | yt-dlp wrapper | `pipeline/downloader.py` | REWRITE | Standardize exception handling. Keep cookie logic. |
 | OpenAI Transcription | `pipeline/transcriber.py` | REWRITE | Must use new `ai_client.py` wrapper. |
-| LLM Highlighting | `pipeline/highlight_detector.py` | REWRITE | Add robust retry logic (ADR-005). |
+| LLM Highlighting | `pipeline/highlight_detector.py` | REWRITE | Add robust retry logic (see AGENTS.md §2). |
 | FFmpeg cutting/cropping | `pipeline/video_processor.py` | REWRITE | Use GPU detector, strict 9:16 output. |
 | Face detection/tracking | `pipeline/speaker_layout.py` | REWRITE | Decouple from FFmpeg execution. Add SPLIT mode. |
 | Subtitle creation | `pipeline/caption_generator.py` | REWRITE | Standalone ASS generation. |

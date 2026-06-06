@@ -145,21 +145,19 @@ def malformed_highlight_response():
 | `test_raw_llm_response_logged`          | Setiap LLM response di-log ke logger                      |
 
 ```python
-# Contoh test retry
-def test_retry_on_malformed_json(mock_config, malformed_highlight_response, valid_highlight_response, mocker):
+# Contoh test retry — semua attempt gagal, lalu raise
+def test_retry_on_malformed_json(mock_config, malformed_highlight_response, mocker):
     call_count = 0
 
     def mock_completion(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        if call_count < 3:
-            return MockResponse(malformed_highlight_response)
-        return MockResponse(valid_highlight_response)
+        return MockResponse(malformed_highlight_response)
 
     mocker.patch("providers.ai_client.get_client").return_value.chat.completions.create = mock_completion
-    result = find_highlights("sample srt", mock_config)
-    assert len(result) == 2
-    assert call_count == 3  # initial + 2 retries
+    with pytest.raises(HighlightDetectionError):
+        find_highlights("sample srt", mock_config)
+    assert call_count == 3  # initial + 2 retries, then raise
 ```
 
 ---

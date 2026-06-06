@@ -59,7 +59,10 @@ def get_client(config: dict) -> OpenAI:
 
 **Config keys** (stored in `config.json`):
 
-```json
+> ℹ️ The block below is annotated with `//` comments for documentation only.
+> The real `config.json` must be **strict JSON** — remove all comments when copying.
+
+```jsonc
 {
   "llm": {
     "base_url": "http://localhost:11434/v1",
@@ -551,7 +554,7 @@ Create these files if long-term development becomes harder to track:
 | v1 Component                     | v2 Replacement                                           | Action                             |
 | -------------------------------- | -------------------------------------------------------- | ---------------------------------- |
 | `app.py` (CustomTkinter)         | `server.py` (Gradio)                                     | Rewrite                            |
-| `clipper_core.py`                | `pipeline/` package                                      | Refactor — split into 5 modules    |
+| `clipper_core.py`                | `pipeline/` package                                      | Refactor — split into 7 modules    |
 | `pages/`                         | Gradio Tabs in `server.py`                               | Rewrite                            |
 | `components/ai_provider_card.py` | `providers/ai_client.py` + Settings Tab                  | Rewrite                            |
 | `utils/dependency_manager.py`    | `utils/dependency_check.py` + Dockerfile                 | Simplify — Docker handles binaries |
