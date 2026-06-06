@@ -2,7 +2,7 @@ name: PR Agent (via 9Router)
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, review_requested]
+    types: [opened, reopened, ready_for_review, review_requested, synchronize]
   issue_comment:
 
 jobs:
@@ -32,7 +32,6 @@ jobs:
           config.custom_model_max_tokens: "128000"
 
           # Fix: gpt-5 class models tidak support temperature != 1
-          # drop_params supaya litellm otomatis drop param yang tidak didukung model
           config.temperature: "1"
           LITELLM.DROP_PARAMS: "true"
 
@@ -40,4 +39,4 @@ jobs:
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
-          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
