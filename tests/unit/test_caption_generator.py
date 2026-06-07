@@ -33,7 +33,7 @@ class TestCaptionGenerator(unittest.TestCase):
         # Check that it breaks into groups of 5 words
         self.assertIn("Dialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,{\\c&H0000FFFF&}Hello{\\c&H00FFFFFF&} world this is a", ass_text)
         # Check second group
-        self.assertIn("Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,{\\c&H0000FFFF&}test \\{injection\\}{\\c&H00FFFFFF&}", ass_text)
+        self.assertIn("Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,{\\c&H0000FFFF&}test ｛injection｝{\\c&H00FFFFFF&}", ass_text)
 
     @patch("pipeline.caption_generator.subprocess.run")
     @patch("pipeline.caption_generator.os.remove")

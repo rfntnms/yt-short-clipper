@@ -18,12 +18,25 @@ def generate_ass_content(word_json: List[Dict[str, Any]], config: dict) -> str:
     """
     # Extract config or defaults
     style_cfg = config.get("caption_style", {})
-    font_name = style_cfg.get("font_name", "Arial")
-    font_size = style_cfg.get("font_size", 14)
-    primary_color = style_cfg.get("primary_color", "&H00FFFFFF")  # White
-    highlight_color = style_cfg.get("highlight_color", "&H0000FFFF")  # Yellow
-    outline_color = style_cfg.get("outline_color", "&H00000000")
-    back_color = style_cfg.get("back_color", "&H80000000")
+    
+    def clean_ass_field(value: Any, default: str) -> str:
+        text = str(value if value is not None else default)
+        return text.replace(",", " ").replace("\r", " ").replace("\n", " ").strip() or default
+
+    def clean_ass_color(value: Any, default: str) -> str:
+        text = str(value if value is not None else default).strip()
+        return text if text.startswith("&H") and len(text) == 10 else default
+
+    font_name = clean_ass_field(style_cfg.get("font_name"), "Arial")
+    try:
+        font_size = int(style_cfg.get("font_size", 14))
+    except (ValueError, TypeError):
+        font_size = 14
+        
+    primary_color = clean_ass_color(style_cfg.get("primary_color"), "&H00FFFFFF")
+    highlight_color = clean_ass_color(style_cfg.get("highlight_color"), "&H0000FFFF")
+    outline_color = clean_ass_color(style_cfg.get("outline_color"), "&H00000000")
+    back_color = clean_ass_color(style_cfg.get("back_color"), "&H80000000")
     
     # ASS Header
     ass_lines = [
@@ -90,8 +103,8 @@ def generate_ass_content(word_json: List[Dict[str, Any]], config: dict) -> str:
                     w["word"]
                     .strip()
                     .replace("\\", "\\\\")
-                    .replace("{", "\\{")
-                    .replace("}", "\\}")
+                    .replace("{", "｛")
+                    .replace("}", "｝")
                     .replace("\r", " ")
                     .replace("\n", " ")
                 )
@@ -129,7 +142,6 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         
         # Prepare FFmpeg command
         hw_flags = get_ffmpeg_hwaccel_flags()
-        input_flags = hw_flags.get("input_flags", [])
         vcodec = hw_flags.get("vcodec", "libx264")
         preset = hw_flags.get("preset", "fast")
         
@@ -143,17 +155,14 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         )
         
         cmd = [
-            "ffmpeg", "-y"
-        ]
-        cmd.extend(input_flags)
-        cmd.extend([
+            "ffmpeg", "-y",
             "-i", clip_path,
             "-vf", f"ass='{escaped_ass_path}'",
             "-c:v", vcodec,
             "-preset", preset,
             "-c:a", "copy",
             output_path
-        ])
+        ]
         
         logger.debug(f"Running subtitle burn-in: {' '.join(cmd)}")
         
