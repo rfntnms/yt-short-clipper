@@ -12,7 +12,7 @@ class TestCaptionGenerator(unittest.TestCase):
             {"word": "this", "start": 1.0, "end": 1.2},
             {"word": "is", "start": 1.2, "end": 1.4},
             {"word": "a", "start": 1.4, "end": 1.5},
-            {"word": "test", "start": 1.5, "end": 2.0},
+            {"word": "test\n{injection}", "start": 1.5, "end": 2.0},
         ]
 
     def test_ass_file_generation_matches_schema(self):
@@ -33,7 +33,7 @@ class TestCaptionGenerator(unittest.TestCase):
         # Check that it breaks into groups of 5 words
         self.assertIn("Dialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,{\\c&H0000FFFF&}Hello{\\c&H00FFFFFF&} world this is a", ass_text)
         # Check second group
-        self.assertIn("Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,{\\c&H0000FFFF&}test{\\c&H00FFFFFF&}", ass_text)
+        self.assertIn("Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,{\\c&H0000FFFF&}test \\{injection\\}{\\c&H00FFFFFF&}", ass_text)
 
     @patch("pipeline.caption_generator.subprocess.run")
     @patch("pipeline.caption_generator.os.path.exists")

@@ -83,7 +83,15 @@ def generate_ass_content(word_json: List[Dict[str, Any]], config: dict) -> str:
             
             text_parts = []
             for j, w in enumerate(line_words):
-                word_text = w["word"].strip()
+                word_text = (
+                    w["word"]
+                    .strip()
+                    .replace("\\", "\\\\")
+                    .replace("{", "\\{")
+                    .replace("}", "\\}")
+                    .replace("\r", " ")
+                    .replace("\n", " ")
+                )
                 if i == j:
                     text_parts.append(f"{{\\c{highlight_color}&}}{word_text}{{\\c{primary_color}&}}")
                 else:
@@ -123,7 +131,13 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         preset = hw_flags.get("preset", "fast")
         
         # Subtitles filter needs paths escaped properly for FFmpeg
-        escaped_ass_path = ass_path.replace("\\", "/").replace(":", "\\:")
+        # We wrap in single quotes to protect spaces, but must escape inner single quotes
+        escaped_ass_path = (
+            ass_path
+            .replace("\\", "/")
+            .replace(":", "\\:")
+            .replace("'", "'\\''")
+        )
         
         cmd = [
             "ffmpeg", "-y"
