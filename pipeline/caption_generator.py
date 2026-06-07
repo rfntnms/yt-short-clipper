@@ -134,9 +134,9 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         # We wrap in single quotes to protect spaces, but must escape inner single quotes
         escaped_ass_path = (
             ass_path
-            .replace("\\", "/")
+            .replace("\\", "\\\\")
             .replace(":", "\\:")
-            .replace("'", "'\\''")
+            .replace("'", "\\'")
         )
         
         cmd = [
@@ -158,6 +158,7 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         try:
             result = subprocess.run(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
