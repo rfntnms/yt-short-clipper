@@ -73,7 +73,19 @@ class TestCaptionGenerator(unittest.TestCase):
         with self.assertRaises(CaptioningError) as context:
             generate_and_burn("fake_clip.mp4", self.sample_word_json, {})
             
-        self.assertIn("FFmpeg captioning failed", str(context.exception))
+        self.assertIn("FFmpeg captioning", str(context.exception))
+
+    @patch("pipeline.caption_generator.subprocess.run")
+    @patch("pipeline.caption_generator.os.path.exists")
+    def test_ffmpeg_timeout_raises_error(self, mock_exists, mock_run):
+        import subprocess
+        mock_exists.side_effect = lambda p: True if p.endswith(".mp4") else False
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="ffmpeg", timeout=1800)
+        
+        with self.assertRaises(CaptioningError) as context:
+            generate_and_burn("fake_clip.mp4", self.sample_word_json, {"ffmpeg_timeout_sec": 1800})
+            
+        self.assertIn("FFmpeg captioning", str(context.exception))
 
 if __name__ == '__main__':
     unittest.main()

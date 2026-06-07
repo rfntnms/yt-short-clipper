@@ -118,6 +118,7 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         
         # Prepare FFmpeg command
         hw_flags = get_ffmpeg_hwaccel_flags()
+        input_flags = hw_flags.get("input_flags", [])
         vcodec = hw_flags.get("vcodec", "libx264")
         preset = hw_flags.get("preset", "fast")
         
@@ -125,18 +126,32 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         escaped_ass_path = ass_path.replace("\\", "/").replace(":", "\\:")
         
         cmd = [
-            "ffmpeg", "-y",
+            "ffmpeg", "-y"
+        ]
+        cmd.extend(input_flags)
+        cmd.extend([
             "-i", clip_path,
             "-vf", f"ass='{escaped_ass_path}'",
             "-c:v", vcodec,
             "-preset", preset,
             "-c:a", "copy",
             output_path
-        ]
+        ])
         
         logger.debug(f"Running subtitle burn-in: {' '.join(cmd)}")
         
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        timeout_sec = config.get("ffmpeg_timeout_sec", 1800)
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout_sec
+            )
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"FFmpeg captioning timed out after {timeout_sec}s")
+            raise CaptioningError(f"FFmpeg captioning timed out after {timeout_sec}s") from e
         
         if result.returncode != 0:
             logger.error(f"FFmpeg captioning failed. Stderr:\n{result.stderr}")
