@@ -34,28 +34,24 @@
 
 > Agent harus mulai dari sini di sesi berikutnya, kecuali ada perubahan prioritas.
 
-1. Lanjut ke `RFN-17` (Structured Logging & System Health Checks) — first code change
-2. Setelah RFN-17, `RFN-18` (Configuration Management) — fondasi provider layer
+1. Lanjut ke `RFN-26` (pipeline/orchestrator.py — Sequential Flow & Generator)
+2. Mulai mengerjakan Gradio UI MVP (`RFN-28`)
 
 ---
 
 ## 🗂️ Sesi Terakhir
 
-**Tanggal:** 2026-06-05
-**Durasi:** —
+**Tanggal:** 2026-06-07
 **Yang dikerjakan:**
-
-> * Audit v1 codebase (6,578 baris code v1 di-scan structure-nya)
-> * Buat `MIGRATION_MAP.md` berisi mapping lengkap komponen dari v1 (CustomTkinter) ke v2 (Gradio/Modular)
-> * Identifikasi Migration Risks (Gradio UI blocking, AI Provider abstraction, FFmpeg portability, Speaker Layout complexities)
+> * Sinkronisasi state lokal dengan Linear MCP
+> * Implementasi `pipeline/caption_generator.py` (ASS Subtitle Burn-in) untuk RFN-25
+> * Membuat unit test test_caption_generator.py untuk validasi render .ass dan FFmpeg args
 
 **Blocker yang ditemukan:**
-
 > *(none)*
 
 **Keputusan yang dibuat sesi ini:**
-
-> RFN-6 & RFN-15 terdeteksi duplikat, pakai RFN-15 sebagai Main Tracking.
+> Menggunakan override tags untuk efek karaoke di .ass file dan mengabaikan extract audio ulang karena whisper word-level input sudah tersedia dari module sebelumnya.
 
 ---
 
