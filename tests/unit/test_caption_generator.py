@@ -36,8 +36,9 @@ class TestCaptionGenerator(unittest.TestCase):
         self.assertIn("Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,{\\c&H0000FFFF&}test \\{injection\\}{\\c&H00FFFFFF&}", ass_text)
 
     @patch("pipeline.caption_generator.subprocess.run")
+    @patch("pipeline.caption_generator.os.remove")
     @patch("pipeline.caption_generator.os.path.exists")
-    def test_ffmpeg_subtitle_burn_command(self, mock_exists, mock_run):
+    def test_ffmpeg_subtitle_burn_command(self, mock_exists, mock_remove, mock_run):
         mock_exists.return_value = True # Pretend clip_path exists
         
         mock_proc = MagicMock()
@@ -61,8 +62,9 @@ class TestCaptionGenerator(unittest.TestCase):
         self.assertTrue(vf_arg.startswith("ass="))
 
     @patch("pipeline.caption_generator.subprocess.run")
+    @patch("pipeline.caption_generator.os.remove")
     @patch("pipeline.caption_generator.os.path.exists")
-    def test_ffmpeg_failure_raises_error(self, mock_exists, mock_run):
+    def test_ffmpeg_failure_raises_error(self, mock_exists, mock_remove, mock_run):
         mock_exists.side_effect = lambda p: True if p.endswith(".mp4") else False
         
         mock_proc = MagicMock()
@@ -76,8 +78,9 @@ class TestCaptionGenerator(unittest.TestCase):
         self.assertIn("FFmpeg captioning", str(context.exception))
 
     @patch("pipeline.caption_generator.subprocess.run")
+    @patch("pipeline.caption_generator.os.remove")
     @patch("pipeline.caption_generator.os.path.exists")
-    def test_ffmpeg_timeout_raises_error(self, mock_exists, mock_run):
+    def test_ffmpeg_timeout_raises_error(self, mock_exists, mock_remove, mock_run):
         import subprocess
         mock_exists.side_effect = lambda p: True if p.endswith(".mp4") else False
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="ffmpeg", timeout=1800)

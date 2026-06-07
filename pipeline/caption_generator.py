@@ -48,10 +48,10 @@ def generate_ass_content(word_json: List[Dict[str, Any]], config: dict) -> str:
     words = word_json
     
     def format_time(seconds: float) -> str:
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        s = int(seconds % 60)
-        cs = int((seconds % 1) * 100)
+        total_cs = max(0, round(seconds * 100))
+        h, rem = divmod(total_cs, 360000)
+        m, rem = divmod(rem, 6000)
+        s, cs = divmod(rem, 100)
         return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
     # Simple grouper
@@ -78,6 +78,9 @@ def generate_ass_content(word_json: List[Dict[str, Any]], config: dict) -> str:
         
         # We need to emit one event per word highlight
         for i, active_word in enumerate(line_words):
+            if active_word["end"] <= active_word["start"]:
+                continue
+            
             event_start = format_time(active_word["start"])
             event_end = format_time(active_word["end"])
             
@@ -165,10 +168,14 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
                 timeout=timeout_sec
             )
         except subprocess.TimeoutExpired as e:
+            if os.path.exists(output_path):
+                os.remove(output_path)
             logger.error(f"FFmpeg captioning timed out after {timeout_sec}s")
             raise CaptioningError(f"FFmpeg captioning timed out after {timeout_sec}s") from e
         
         if result.returncode != 0:
+            if os.path.exists(output_path):
+                os.remove(output_path)
             logger.error(f"FFmpeg captioning failed. Stderr:\n{result.stderr}")
             raise CaptioningError(f"FFmpeg captioning failed: {result.stderr}")
             
