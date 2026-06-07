@@ -1,0 +1,53 @@
+name: Codex Fix PR
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+  actions: read
+
+jobs:
+  codex-fix:
+    if: >
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/codex-fix')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/head
+
+      - uses: openai/codex-action@v1
+        with:
+          prompt: |
+            You are fixing this pull request based on review comments and failing GitHub Actions.
+
+            Goal:
+            Fix the current PR branch until review comments are addressed and checks pass.
+
+            Steps:
+            1. Read unresolved PR review comments.
+            2. Read failing GitHub Actions checks, logs, and annotations.
+            3. Create a short fix plan.
+            4. Implement minimal fixes only.
+            5. Run relevant tests.
+            6. Commit and push changes to this PR branch.
+            7. Comment with:
+               - review comments addressed
+               - CI failures fixed
+               - files changed
+               - tests run
+               - remaining blockers
+
+            Rules:
+            - Do not rewrite unrelated code.
+            - Do not weaken or delete tests.
+            - Do not bypass CI.
+            - Do not expose secrets.
+            - Do not modify workflow files unless the workflow is the root cause.
