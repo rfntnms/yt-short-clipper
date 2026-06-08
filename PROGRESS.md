@@ -12,27 +12,27 @@
 | Modul                   | Status | Catatan |
 | ----------------------- | ------ | ------- |
 | `orchestrator.py`       | ⬜ TODO | —       |
-| `downloader.py`         | ⬜ TODO | —       |
-| `transcriber.py`        | ⬜ TODO | —       |
-| `highlight_detector.py` | ⬜ TODO | —       |
-| `video_processor.py`    | ⬜ TODO | —       |
+| `downloader.py`         | ✅ DONE | —       |
+| `transcriber.py`        | ✅ DONE | —       |
+| `highlight_detector.py` | ✅ DONE | —       |
+| `video_processor.py`    | ✅ DONE | —       |
 | `speaker_layout.py`     | ⬜ TODO | —       |
-| `caption_generator.py`  | ⬜ TODO | —       |
+| `caption_generator.py`  | ✅ DONE | —       |
 
 ### Providers (`providers/`)
 
 | Modul               | Status | Catatan |
 | ------------------- | ------ | ------- |
-| `ai_client.py`      | ⬜ TODO | —       |
-| `config_manager.py` | ⬜ TODO | —       |
+| `ai_client.py`      | ✅ DONE | —       |
+| `config_manager.py` | ✅ DONE | —       |
 
 ### Utils (`utils/`)
 
 | Modul                 | Status | Catatan |
 | --------------------- | ------ | ------- |
-| `logger.py`           | ⬜ TODO | —       |
-| `gpu_detector.py`     | ⬜ TODO | —       |
-| `dependency_check.py` | ⬜ TODO | —       |
+| `logger.py`           | ✅ DONE | Structured logger dengan rotating file |
+| `gpu_detector.py`     | ✅ DONE | Deteksi CUDA dan HWAccel flags |
+| `dependency_check.py` | ✅ DONE | Validasi ffmpeg dan yt-dlp |
 
 ### Batch (`batch/`)
 
@@ -102,4 +102,8 @@
 [2026-06-05] — RFN-16 Selesai. Tambah .hermes/LINEAR_WORKFLOW.md (workflow + branching rules). Update CONTRIBUTING.md v2 safety rules. Link di AGENTS.md header.
 [2026-06-05] — RFN-15 Selesai. MIGRATION_MAP.md dibuat (audit v1 ke v2).
 [2026-06-05] — Inisialisasi PROGRESS.md, semua modul masih TODO
+[2026-06-07] — RFN-17 Selesai. Utils foundation (logger, gpu_detector, dependency_check) dibuat.
 ```
+
+[2026-06-07] — Sync state with Linear
+[2026-06-07] — RFN-25 Selesai. pipeline/caption_generator.py (ASS Subtitle Burn-in) diimplementasi.: RFN-18, RFN-19, RFN-20, RFN-21, RFN-22, RFN-23, RFN-24 are DONE.

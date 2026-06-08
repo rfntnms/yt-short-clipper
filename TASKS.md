@@ -9,37 +9,37 @@
 
 ### `pipeline/downloader.py`
 
-* [ ] Implementasi `download(url, output_dir, cookies_path)` via `yt-dlp`
-* [ ] Return path video + path `.srt` (jika tersedia di YouTube)
-* [ ] Raise `DownloadError` jika gagal
-* [ ] Support cookies.txt untuk video age-restricted
+* [x] Implementasi `download(url, output_dir, cookies_path)` via `yt-dlp`
+* [x] Return path video + path `.srt` (jika tersedia di YouTube)
+* [x] Raise `DownloadError` jika gagal
+* [x] Support cookies.txt untuk video age-restricted
 
 ### `pipeline/transcriber.py`
 
-* [ ] Implementasi `transcribe(video_path, config)` via Whisper endpoint
-* [ ] Output format: word-level JSON (`{word, start, end}` per item)
-* [ ] Skip transcription jika `.srt` sudah tersedia dari downloader
-* [ ] Raise `TranscriptionError` jika API gagal
+* [x] Implementasi `transcribe(video_path, config)` via Whisper endpoint
+* [x] Output format: word-level JSON (`{word, start, end}` per item)
+* [x] Skip transcription jika `.srt` sudah tersedia dari downloader
+* [x] Raise `TranscriptionError` jika API gagal
 
 ### `pipeline/highlight_detector.py`
 
-* [ ] Baca `prompts/SYSTEM_PROMPT.md` sebagai system prompt
-* [ ] Kirim transcript ke LLM via `providers/ai_client.py`
-* [ ] Parse JSON response → `List[Highlight(start, end, hook_text, score)]`
-* [ ] Retry loop maks 2x jika JSON malformed
-* [ ] Log semua raw LLM response ke `app.log`
-* [ ] Raise `HighlightDetectionError` setelah retry habis
+* [x] Baca `prompts/SYSTEM_PROMPT.md` sebagai system prompt
+* [x] Kirim transcript ke LLM via `providers/ai_client.py`
+* [x] Parse JSON response → `List[Highlight(start, end, hook_text, score)]`
+* [x] Retry loop maks 2x jika JSON malformed
+* [x] Log semua raw LLM response ke `app.log`
+* [x] Raise `HighlightDetectionError` setelah retry habis
 
 ### `pipeline/video_processor.py`
 
-* [ ] Implementasi `cut(video_path, highlight)` → raw clip `.mp4`
-* [ ] Implementasi `convert_to_portrait(clip_path, config)` → 9:16 output
+* [x] Implementasi `cut(video_path, highlight)` → raw clip `.mp4`
+* [x] Implementasi `convert_to_portrait(clip_path, config)` → 9:16 output
 * [ ] Integrasi `speaker_layout.analyze()` untuk SINGLE vs SPLIT decision
-* [ ] SINGLE mode: standard 9:16 crop centered pada active speaker
+* [x] SINGLE mode: standard 9:16 crop centered pada active speaker
 * [ ] SPLIT mode: dual-speaker split-screen via FFmpeg `vstack` (lihat AGENTS.md §3a)
 * [ ] Easing/smoothing pada crop window (anti-jitter)
-* [ ] GPU hwaccel via `gpu_detector.py` (`h264_nvenc` vs `libx264`)
-* [ ] Output selalu `1080×1920`
+* [x] GPU hwaccel via `gpu_detector.py` (`h264_nvenc` vs `libx264`)
+* [x] Output selalu `1080×1920`
 
 ### `pipeline/speaker_layout.py`
 
@@ -53,10 +53,10 @@
 
 ### `pipeline/caption_generator.py`
 
-* [ ] Extract audio dari clip
-* [ ] Kirim ke Whisper → word-level timestamps
-* [ ] Build file `.ass` (yellow highlight style, bold, configurable)
-* [ ] FFmpeg burn-in captions ke final clip
+* [x] Extract audio dari clip
+* [x] Kirim ke Whisper → word-level timestamps
+* [x] Build file `.ass` (yellow highlight style, bold, configurable)
+* [x] FFmpeg burn-in captions ke final clip
 
 ### `pipeline/orchestrator.py`
 
@@ -72,33 +72,33 @@
 
 ### `providers/ai_client.py`
 
-* [ ] Implementasi `get_client(config)` → return `openai.OpenAI` instance
-* [ ] Support `base_url` custom (Ollama, LM Studio, dll.)
-* [ ] **Tidak boleh** ada provider-specific branching di luar file ini
+* [x] Implementasi `get_client(config)` → return `openai.OpenAI` instance
+* [x] Support `base_url` custom (Ollama, LM Studio, dll.)
+* [x] **Tidak boleh** ada provider-specific branching di luar file ini
 
 ### `providers/config_manager.py`
 
-* [ ] `load_config(path)` → return `dict`
-* [ ] `save_config(config, path)`
-* [ ] Validasi required keys saat load
-* [ ] **Jangan** log API keys
+* [x] `load_config(path)` → return `dict`
+* [x] `save_config(config, path)`
+* [x] Validasi required keys saat load
+* [x] **Jangan** log API keys
 
 ### `utils/logger.py`
 
-* [ ] Setup structured logger `ytclipper`
-* [ ] Output ke `app.log` + console
-* [ ] Rotasi log (max 10MB, keep 3 files)
+* [x] Setup structured logger `ytclipper`
+* [x] Output ke `app.log` + console
+* [x] Rotasi log (max 10MB, keep 3 files)
 
 ### `utils/gpu_detector.py`
 
-* [ ] Detect CUDA availability
-* [ ] Return FFmpeg hwaccel flags yang tepat
+* [x] Detect CUDA availability
+* [x] Return FFmpeg hwaccel flags yang tepat
 
 ### `utils/dependency_check.py`
 
-* [ ] Validasi `ffmpeg` tersedia di PATH
-* [ ] Validasi `yt-dlp` tersedia
-* [ ] Raise error deskriptif jika tidak ada (tampil di Gradio startup)
+* [x] Validasi `ffmpeg` tersedia di PATH
+* [x] Validasi `yt-dlp` tersedia
+* [x] Raise error deskriptif jika tidak ada (tampil di Gradio startup)
 
 ---
 
@@ -196,3 +196,14 @@
 - [x] Update CONTRIBUTING.md with v2 safety rules (migrate dari generic v1 ke v2-specific)
 - [x] Document branch protection rules in CONTRIBUTING.md
 *(Selesai: 2026-06-05)*
+
+### RFN-17 — Structured Logging & System Health Checks
+- [x] Setup structured logger `ytclipper`
+- [x] Output ke `app.log` + console
+- [x] Rotasi log (max 10MB, keep 3 files)
+- [x] Detect CUDA availability
+- [x] Return FFmpeg hwaccel flags yang tepat
+- [x] Validasi `ffmpeg` tersedia di PATH
+- [x] Validasi `yt-dlp` tersedia
+- [x] Raise error deskriptif jika tidak ada
+*(Selesai: 2026-06-07)*
