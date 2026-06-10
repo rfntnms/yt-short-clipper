@@ -12,7 +12,7 @@
 | Modul                   | Status | Catatan |
 | ----------------------- | ------ | ------- |
 | `orchestrator.py`       | ⬜ TODO | —       |
-| `downloader.py`         | ⬜ TODO | —       |
+| `downloader.py`         | ✅ DONE | yt-dlp wrapper + tests |
 | `transcriber.py`        | ⬜ TODO | —       |
 | `highlight_detector.py` | ⬜ TODO | —       |
 | `video_processor.py`    | ⬜ TODO | —       |
