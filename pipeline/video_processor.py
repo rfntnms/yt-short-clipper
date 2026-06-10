@@ -125,7 +125,9 @@ def convert_to_portrait(
         f"pad={_OUTPUT_WIDTH}:{_OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
     )
 
-    hwaccel = flags.get("hwaccel", [])
+    # Do not pass hwaccel decode flags here. The crop/scale/pad filter chain
+    # uses software filters that need system-memory frames. We still use GPU
+    # acceleration at the encoder level when h264_nvenc is available.
     encoder = flags.get("encoder", "libx264")
 
     # Quality flag must match the encoder family:

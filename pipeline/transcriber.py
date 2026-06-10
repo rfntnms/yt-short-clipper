@@ -1,11 +1,13 @@
 """Whisper transcription module.
 
 Second step in the orchestrator pipeline.
-Calls Whisper endpoint via providers/ai_client (ADR-003 compliant).
+If a .srt file exists next to the video, parse it into word-level JSON.
+Falls back to Whisper endpoint via providers/ai_client (ADR-003 compliant).
 Returns word-level JSON: [{"word": str, "start": float, "end": float}, ...]
 """
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +18,67 @@ from utils.logger import logger
 class TranscriptionError(Exception):
     """Raised when transcription fails (invalid file, API error)."""
 
+_SRT_BLOCK_RE = re.compile(
+    r"(?:\d+\r?\n)?"                                   # optional block index
+    r"(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\r?\n"  # timestamps
+    r"([^\n](?:.|\n)*?)(?:\r?\n\r?\n|\Z)",            # text until blank line or EOF
+    re.DOTALL,
+)
+
+
+def _srt_ts_to_seconds(ts: str) -> float | None:
+    """Convert HH:MM:SS,mmm to float seconds, or None on bad format."""
+    m = re.match(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})", ts.strip())
+    if not m:
+        return None
+    h, mm, ss, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    return h * 3600 + mm * 60 + ss + ms / 1000.0
+
+
+def _parse_srt(srt_path: Path) -> list[dict[str, Any]]:
+    """Parse an SRT subtitle file into word-level JSON.
+
+    Each caption block's text is split into words. Timestamps are distributed
+    evenly across words within the caption's [start, end] interval.
+    Raises TranscriptionError on parse failure or empty content.
+    """
+    try:
+        raw = srt_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        raise TranscriptionError(f"Failed to read SRT file: {srt_path}") from exc
+
+    words: list[dict[str, Any]] = []
+    for m in _SRT_BLOCK_RE.finditer(raw):
+        start_ts, end_ts, text_block = m.group(1), m.group(2), m.group(3)
+        start = _srt_ts_to_seconds(start_ts)
+        end = _srt_ts_to_seconds(end_ts)
+        if start is None or end is None:
+            raise TranscriptionError(f"Invalid SRT timestamps: {start_ts!r} --> {end_ts!r}")
+        # Strip HTML-like tags used in some SRT files (e.g. <b>, <i>, <font ...>).
+        cleaned = re.sub(r"<[^>]+>", "", text_block).strip()
+        tokens = cleaned.split()
+        if not tokens:
+            continue
+        duration = max(end - start, 0.0)
+        per_word = duration / len(tokens)
+        for i, token in enumerate(tokens):
+            w_start = start + i * per_word
+            w_end = w_start + per_word
+            words.append({"word": token, "start": w_start, "end": w_end})
+
+    if not words:
+        raise TranscriptionError("SRT did not contain transcript words")
+    return words
+
 
 def transcribe(
     video_path: Path,
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Transcribe a video file using Whisper via OpenAI-compatible endpoint.
+
+    If a sibling .srt file exists (produced by the downloader), it is parsed
+    for word-level timestamps and the Whisper call is skipped entirely.
 
     Args:
         video_path: Path to the video/audio file.
@@ -31,7 +88,8 @@ def transcribe(
         List of dicts: [{"word": str, "start": float, "end": float}, ...]
 
     Raises:
-        TranscriptionError: If the file doesn't exist or the API call fails.
+        TranscriptionError: If the file doesn't exist, the SRT has no words,
+            or the API call fails.
     """
     if not video_path.exists():
         raise TranscriptionError(f"Video file not found: {video_path}")
@@ -39,12 +97,12 @@ def transcribe(
     transcription_cfg: dict[str, Any] = config.get("transcription", {})
     model: str = transcription_cfg.get("model", "whisper-1")
 
-    # Downloader may have produced an .srt, but we still need word-level
-    # JSON so downstream steps (highlight_detector, caption_generator) get
-    # timed word data. Log the skip candidate but continue to Whisper call.
+    # If the downloader produced a sibling .srt, parse it and skip the
+    # remote Whisper call. Words are evenly distributed per caption block.
     expected_srt = video_path.with_suffix(".srt")
     if expected_srt.exists():
-        logger.info("Existing SRT found, but word-level transcription is still required: %s", expected_srt.name)
+        logger.info("Existing SRT found, skipping Whisper API call: %s", expected_srt.name)
+        return _parse_srt(expected_srt)
 
     # Reuse the generic OpenAI-compatible client factory (ADR-003).
     # get_client() only reads llm.base_url and llm.api_key, but pass only
