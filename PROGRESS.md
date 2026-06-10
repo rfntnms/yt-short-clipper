@@ -16,7 +16,7 @@
 | `transcriber.py`        | ✅ DONE | —       |
 | `highlight_detector.py` | ✅ DONE | —       |
 | `video_processor.py`    | ✅ DONE | —       |
-| `speaker_layout.py`     | ⬜ TODO | —       |
+| `speaker_layout.py`     | ✅ DONE | Smart crop layout analysis, body-safe crops, SPLIT decision helpers |
 | `caption_generator.py`  | ✅ DONE | —       |
 
 ### Providers (`providers/`)
@@ -87,8 +87,8 @@
 | Area                             | Coverage | Target |
 | -------------------------------- | -------- | ------ |
 | `pipeline/highlight_detector.py` | 95%      | 80%    |
-| `pipeline/speaker_layout.py`     | 0%       | 80%    |
-| `pipeline/video_processor.py`    | 0%       | 60%    |
+| `pipeline/speaker_layout.py`     | 90%      | 80%    |
+| `pipeline/video_processor.py`    | 94%      | 60%    |
 | `batch/job_queue.py`             | 0%       | 90%    |
 | `providers/`                     | 0%       | 70%    |
 

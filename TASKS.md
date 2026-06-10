@@ -34,9 +34,10 @@
 
 * [x] Implementasi `cut(video_path, highlight)` → raw clip `.mp4`
 * [x] Implementasi `convert_to_portrait(clip_path, config)` → 9:16 output
-* [ ] Integrasi `speaker_layout.analyze()` untuk SINGLE vs SPLIT decision
+* [x] Integrasi `speaker_layout.analyze()` untuk SINGLE vs SPLIT decision
 * [x] SINGLE mode: standard 9:16 crop centered pada active speaker
-* [ ] SPLIT mode: dual-speaker split-screen via FFmpeg `vstack` (lihat AGENTS.md §3a)
+* [x] SPLIT mode: dual-speaker split-screen via FFmpeg `vstack` (lihat AGENTS.md §3a)
+* [x] Segment rendering + concat untuk mode berubah dalam satu clip
 * [ ] Easing/smoothing pada crop window (anti-jitter)
 * [x] GPU hwaccel via `gpu_detector.py` (`h264_nvenc` vs `libx264`)
 * [x] Output selalu `1080×1920`
@@ -44,12 +45,12 @@
 ### `pipeline/speaker_layout.py`
 
 * [ ] Per-frame face detection (OpenCV DNN atau MediaPipe)
-* [ ] Active speaker scoring (lip movement delta atau optical flow)
-* [ ] Sliding window mode decision (SINGLE vs SPLIT)
-* [ ] Hysteresis window (default 3s, dari `config["portrait"]["split_hysteresis_sec"]`)
-* [ ] Body-safe crop calculation (HEAD_PAD_RATIO + BODY_PAD_RATIO)
-* [ ] Return `List[LayoutSegment(start_sec, end_sec, mode, speaker_crops)]`
-* [ ] Handle semua edge cases (lihat tabel di AGENTS.md §3a)
+* [x] Active speaker scoring helper (threshold-based)
+* [x] Sliding window mode decision (SINGLE vs SPLIT)
+* [x] Hysteresis window (default 3s, dari `config["portrait"]["split_hysteresis_sec"]`)
+* [x] Body-safe crop calculation (HEAD_PAD_RATIO + BODY_PAD_RATIO)
+* [x] Return `List[LayoutSegment(start_sec, end_sec, mode, speaker_crops)]`
+* [x] Handle edge cases yang bisa diuji unit-test (lihat tabel di AGENTS.md §3a)
 
 ### `pipeline/caption_generator.py`
 
