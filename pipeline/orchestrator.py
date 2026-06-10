@@ -79,6 +79,7 @@ def run_job_streaming(job: JobConfig) -> Generator[JobStatus, None, None]:
         word_json: list[dict[str, Any]] = []
         if subtitle_path is not None and not job.force_transcribe:
             transcript_text = Path(subtitle_path).read_text(encoding="utf-8")
+            word_json = transcribe(Path(video_path), job.config)
         else:
             word_json = transcribe(Path(video_path), job.config)
             transcript_text = _words_to_transcript(word_json)
@@ -99,10 +100,8 @@ def run_job_streaming(job: JobConfig) -> Generator[JobStatus, None, None]:
             cut(str(video_path), highlight, str(raw_clip))
             convert_to_portrait(str(raw_clip), job.config, str(portrait_clip))
 
-            if not word_json:
-                word_json = transcribe(Path(portrait_clip), job.config)
-
-            final_clip = _generate_and_burn(str(portrait_clip), word_json, job.config)
+            clip_word_data = _slice_word_data(word_json, highlight.start, highlight.end)
+            final_clip = _generate_and_burn(str(portrait_clip), clip_word_data, job.config)
             output_clips.append(final_clip)
 
         yield _status(job, 0.95, "Writing job metadata", output_clips)
@@ -154,6 +153,29 @@ def _status(
 
 def _words_to_transcript(words: list[dict[str, Any]]) -> str:
     return " ".join(str(word.get("word", "")).strip() for word in words).strip()
+
+
+def _slice_word_data(
+    word_json: list[dict[str, Any]],
+    clip_start: float,
+    clip_end: float,
+) -> list[dict[str, Any]]:
+    """Filter word-level data to the clip's time range and offset timestamps.
+
+    Keeps words whose time range overlaps [clip_start, clip_end) and
+    offsets their timestamps so they are relative to the clip start.
+    """
+    sliced: list[dict[str, Any]] = []
+    for word in word_json:
+        w_start = word.get("start", 0.0)
+        w_end = word.get("end", 0.0)
+        if w_start < clip_end and w_end > clip_start:
+            sliced.append({
+                "word": word.get("word", ""),
+                "start": max(w_start - clip_start, 0.0),
+                "end": max(min(w_end, clip_end) - clip_start, 0.0),
+            })
+    return sliced
 
 
 def _write_metadata(
