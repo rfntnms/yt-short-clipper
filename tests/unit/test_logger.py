@@ -78,12 +78,12 @@ def test_logger_redacts_api_key_value(tmp_log_dir, clean_logger_name):
 def test_logger_redacts_json_api_key(tmp_log_dir, clean_logger_name):
     """logger should redact 'api_key' in JSON-style config dumps."""
     log = setup_logger(name=clean_logger_name, log_dir=tmp_log_dir)
-    secret = "sk-jso...7890"
-    log.info(f'{{"api_key": "{secret}", "model": "gpt-4"}}')
+    placeholder = "dummy-value"
+    log.info(f'{{"api_key": "{placeholder}", "model": "gpt-4"}}')
     
     log_path = Path(tmp_log_dir) / "app.log"
     content = log_path.read_text(encoding="utf-8")
-    assert secret not in content
+    assert placeholder not in content
     assert "REDACTED" in content
 
 
