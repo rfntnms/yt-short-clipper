@@ -9,9 +9,9 @@ def test_batch_runner_submit():
     with tempfile.TemporaryDirectory() as tmpdir:
         runner = BatchRunner(output_dir=tmpdir)
         job_config = JobConfig(url="http://test.com", job_id="test1")
-        
+
         job_id = runner.submit(job_config)
-        
+
         assert job_id == "test1"
         assert runner.jobs["test1"]["status"] == "PENDING"
         assert runner.job_queue.qsize() == 1

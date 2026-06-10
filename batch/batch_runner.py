@@ -42,7 +42,7 @@ class BatchRunner:
         if not hasattr(job_config, 'job_id') or not job_config.job_id:
             import uuid
             job_config.job_id = str(uuid.uuid4())
-            
+
         self.jobs[job_config.job_id] = {
             "id": job_config.job_id,
             "url": job_config.url,
@@ -69,15 +69,15 @@ class BatchRunner:
 
     def _run_loop(self):
         from pipeline.orchestrator import run_job_streaming
-        
+
         while not self._stop_event.is_set():
             try:
                 job_config = self.job_queue.get(timeout=1.0)
                 job_id = job_config.job_id
-                
+
                 self.jobs[job_id]["status"] = "RUNNING"
                 self._save_jobs()
-                
+
                 try:
                     for status in run_job_streaming(job_config):
                         self.jobs[job_id]["status"] = status.status
@@ -91,7 +91,7 @@ class BatchRunner:
                     self._save_jobs()
                 finally:
                     self.job_queue.task_done()
-                    
+
             except queue.Empty:
                 continue
             except Exception as e:
