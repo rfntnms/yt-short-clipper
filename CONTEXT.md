@@ -9,24 +9,24 @@
 
 ## 📍 Status Saat Ini (Update Setiap Sesi)
 
-**Tanggal update terakhir:** 2026-06-05
-**Fase development aktif:** Milestone 0 (M0) — Migration Preparation
+**Tanggal update terakhir:** 2026-06-10
+**Fase development aktif:** Milestone 6 (M6) — Portrait Smart Crop & Split Mode
 
 ### Apa yang sedang dikerjakan sekarang:
 
-> RFN-16 — Development Safety Rules & Branching Strategy (DONE, in review)
-> Menunggu approval & merge. Setelah itu pindah ke M1 (RFN-17 first code).
+> RFN-31 — Portrait Smart Crop & SPLIT Mode implemented in branch `feat/RFN-31-portrait-crop`.
+> Menunggu review sebelum merge.
 
 ### File yang terakhir dimodifikasi:
 
-> `AGENTS.md` (Link banner ke .hermes/LINEAR_WORKFLOW.md)
-> `CONTRIBUTING.md` (Rewrite ke v2 migration safety rules)
-> `.hermes/LINEAR_WORKFLOW.md` (Sudah ada dari sesi sebelumnya)
+> `pipeline/speaker_layout.py` (layout analysis, hysteresis, body-safe crop)
+> `pipeline/video_processor.py` (SINGLE/SPLIT portrait rendering, segment concat)
+> `tests/unit/test_speaker_layout.py`, `tests/unit/test_video_processor.py`
 > `TASKS.md`, `PROGRESS.md` (Update tracking)
 
 ### Keputusan pending yang belum dikonfirmasi:
 
-> *(Belum ada)*
+> Per-frame real face detection masih placeholder `_compute_active_scores`; unit tests mock hook ini. Butuh task lanjutan kalau ingin OpenCV DNN/MediaPipe detection real-time.
 
 ---
 
@@ -34,24 +34,24 @@
 
 > Agent harus mulai dari sini di sesi berikutnya, kecuali ada perubahan prioritas.
 
-1. Lanjut ke `RFN-26` (pipeline/orchestrator.py — Sequential Flow & Generator)
-2. Mulai mengerjakan Gradio UI MVP (`RFN-28`)
+1. Review branch `feat/RFN-31-portrait-crop` and validate RFN-31 behavior in real sample video.
+2. If approved, merge RFN-31; create follow-up for real OpenCV DNN/MediaPipe face detection if needed.
 
 ---
 
 ## 🗂️ Sesi Terakhir
 
-**Tanggal:** 2026-06-07
+**Tanggal:** 2026-06-10
 **Yang dikerjakan:**
-> * Sinkronisasi state lokal dengan Linear MCP
-> * Implementasi `pipeline/caption_generator.py` (ASS Subtitle Burn-in) untuk RFN-25
-> * Membuat unit test test_caption_generator.py untuk validasi render .ass dan FFmpeg args
+> * Implementasi `pipeline/speaker_layout.py` untuk RFN-31: LayoutMode, FaceInfo, LayoutSegment, body-safe crop, active threshold, sliding window, hysteresis.
+> * Integrasi `pipeline/video_processor.py` dengan speaker_layout untuk SINGLE/SPLIT crop, FFmpeg vstack, segment render, concat.
+> * Tambah unit tests untuk speaker layout, body-safe crop, split mode, multi-segment concat, dan output 1080×1920.
 
 **Blocker yang ditemukan:**
-> *(none)*
+> Real per-frame face detection masih placeholder; `_compute_active_scores` siap diisi OpenCV DNN/MediaPipe pada task lanjutan.
 
 **Keputusan yang dibuat sesi ini:**
-> Menggunakan override tags untuk efek karaoke di .ass file dan mengabaikan extract audio ulang karena whisper word-level input sudah tersedia dari module sebelumnya.
+> Multi-segment layout dirender per segmen lalu concat agar SINGLE/SPLIT transition tidak memakai `segments[0]` untuk seluruh clip.
 
 ---
 
