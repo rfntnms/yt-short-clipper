@@ -1,0 +1,35 @@
+version: "3.9"
+
+# GPU-accelerated deployment.
+# Requires:
+#   - NVIDIA GPU with CUDA drivers
+#   - nvidia-container-toolkit installed (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+services:
+  yt-clipper:
+    image: yt-short-clipper:latest-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: yt-clipper-gpu
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./config.json:/app/config.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: ["server.py"]

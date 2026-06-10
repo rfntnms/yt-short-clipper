@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  yt-clipper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yt-short-clipper:latest
+    container_name: yt-clipper
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    volumes:
+      # Persist generated clips across container restarts
+      - ./output:/app/output
+      # Persist logs
+      - ./logs:/app/logs
+      # Mount config so user can edit without rebuilding
+      - ./config.json:/app/config.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    # Override entrypoint for CLI/batch usage:
+    #   docker compose run --rm yt-clipper python -m pytest tests/
+    command: ["server.py"]
