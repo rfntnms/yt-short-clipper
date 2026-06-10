@@ -1,0 +1,75 @@
+# Git metadata — not needed in image
+.git
+.gitignore
+.github
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE config
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Test artifacts — mount at runtime instead
+tests/
+test_ass.py
+
+# Runtime data — these are bind-mounted volumes, must NOT be baked in
+output/
+logs/
+config.json
+cookies.txt
+
+# Bootstrap scripts — host-only helpers
+build*.spec
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Documentation — not needed at runtime
+*.md
+LICENSE
+DECISIONS.md
+MIGRATION_MAP.md
+CONTEXT.md
+PROGRESS.md
+TASKS.md
+TEST_PLAN.md
+AGENTS.md
+CONTRIBUTING.md
+PANDUAN.md
+COOKIES.md
+GUIDE.md
+
+# v1 legacy desktop sources — never shipped in v2 container
+clipper_core.py
+app.py
+tiktok_uploader.py
+youtube_uploader.py
+webview_app.py
+__pycache__/
+components/
+config/
+dialogs/
+pages/
+services/
+web/
+
+# Python build cache
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+
+# Hermes agent metadata (host CI only)
+.hermes/

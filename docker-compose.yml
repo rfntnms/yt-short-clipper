@@ -1,0 +1,24 @@
+services:
+  yt-short-clipper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yt-short-clipper:latest
+    container_name: yt-short-clipper
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      GRADIO_SERVER_NAME: 0.0.0.0
+      GRADIO_SERVER_PORT: "7860"
+    volumes:
+      # Generated clips and per-job metadata persist across container rebuilds.
+      - ./output:/app/output
+      # User-editable runtime config. Keep local ./config.json created before first up.
+      - ./config.json:/app/config.json
+      # Optional YouTube cookies file for age-restricted/private videos.
+      # Keep local ./cookies.txt created before first up.
+      - ./cookies.txt:/app/cookies.txt:ro
+    command: ["python", "server.py"]

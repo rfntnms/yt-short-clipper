@@ -1,0 +1,13 @@
+services:
+  yt-short-clipper:
+    image: yt-short-clipper:latest-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
