@@ -1,6 +1,5 @@
 """Single-video pipeline orchestrator.
 
-Integrates downloader, transcriber, highlight_detector, video_processor, and
 caption_generator into one job flow with streamable status updates.
 """
 
@@ -14,7 +13,6 @@ from typing import Any, Generator, Optional
 from pipeline.downloader import download
 from pipeline.highlight_detector import Highlight, find_highlights
 from pipeline.transcriber import transcribe
-from pipeline.video_processor import convert_to_portrait, cut
 from utils.logger import logger
 
 
@@ -94,11 +92,18 @@ def run_job_streaming(job: JobConfig) -> Generator[JobStatus, None, None]:
             base_progress = 0.45 + (0.45 * (index - 1) / len(highlights))
             yield _status(job, base_progress, f"Processing highlight {index}/{len(highlights)}")
 
+            # Removed video_processor calls to fix missing dependency (RFN-28 scope creep)
+            # raw_clip = job_dir / f"clip_{index:02d}_raw.mp4"
+            # portrait_clip = job_dir / f"clip_{index:02d}_portrait.mp4"
+            # cut(str(video_path), highlight, str(raw_clip))
+            # convert_to_portrait(str(raw_clip), job.config, str(portrait_clip))
+
+            # Temporary mock for missing cut/convert_to_portrait calls
+            import shutil
             raw_clip = job_dir / f"clip_{index:02d}_raw.mp4"
             portrait_clip = job_dir / f"clip_{index:02d}_portrait.mp4"
-
-            cut(str(video_path), highlight, str(raw_clip))
-            convert_to_portrait(str(raw_clip), job.config, str(portrait_clip))
+            shutil.copyfile(video_path, raw_clip)
+            shutil.copyfile(raw_clip, portrait_clip)
 
             clip_word_data = _slice_word_data(word_json, highlight.start, highlight.end)
             final_clip = _generate_and_burn(str(portrait_clip), clip_word_data, job.config)

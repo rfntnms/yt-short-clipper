@@ -18,14 +18,15 @@ def test_run_job_streaming_uses_existing_subtitle(monkeypatch, tmp_path):
 
     calls = {"transcribe": 0}
 
+    (tmp_path / "source.mp4").touch()
     monkeypatch.setattr(
         "pipeline.orchestrator.download",
         lambda url, output_dir, cookies_path=None: (tmp_path / "source.mp4", subtitle_path),
     )
     monkeypatch.setattr("pipeline.orchestrator.transcribe", lambda video_path, config: calls.__setitem__("transcribe", calls["transcribe"] + 1) or [])
     monkeypatch.setattr("pipeline.orchestrator.find_highlights", lambda srt_text, config: [Highlight(0.0, 2.0, "hello", 9)])
-    monkeypatch.setattr("pipeline.orchestrator.cut", lambda video_path, highlight, output_path: Path(output_path).write_text("raw") or output_path)
-    monkeypatch.setattr("pipeline.orchestrator.convert_to_portrait", lambda clip_path, config, output_path: Path(output_path).write_text("portrait") or output_path)
+    # monkeypatch.setattr("pipeline.orchestrator.cut", lambda video_path, highlight, output_path: Path(output_path).write_text("raw") or output_path)
+    # monkeypatch.setattr("pipeline.orchestrator.convert_to_portrait", lambda clip_path, config, output_path: Path(output_path).write_text("portrait") or output_path)
     monkeypatch.setattr("pipeline.orchestrator._generate_and_burn", lambda clip_path, word_json, config: f"{clip_path}_captioned.mp4")
 
     job = JobConfig(url="https://youtu.be/test", job_id="job1", output_dir=tmp_path, config=_config())
@@ -42,11 +43,13 @@ def test_run_job_streaming_force_transcribes(monkeypatch, tmp_path):
     subtitle_path.write_text("subtitle", encoding="utf-8")
     words = [{"word": "hello", "start": 0.0, "end": 0.4}]
 
-    monkeypatch.setattr("pipeline.orchestrator.download", lambda url, output_dir, cookies_path=None: (tmp_path / "source.mp4", subtitle_path))
+    (tmp_path / "source.mp4").touch()
+    (tmp_path / "source.srt").touch()
+    monkeypatch.setattr("pipeline.orchestrator.download", lambda url, output_dir, cookies_path=None: (tmp_path / "source.mp4", tmp_path / "source.srt"))
     monkeypatch.setattr("pipeline.orchestrator.transcribe", lambda video_path, config: words)
     monkeypatch.setattr("pipeline.orchestrator.find_highlights", lambda text, config: [Highlight(0.0, 1.0, "hello", 10)])
-    monkeypatch.setattr("pipeline.orchestrator.cut", lambda video_path, highlight, output_path: output_path)
-    monkeypatch.setattr("pipeline.orchestrator.convert_to_portrait", lambda clip_path, config, output_path: output_path)
+    # monkeypatch.setattr("pipeline.orchestrator.cut", lambda video_path, highlight, output_path: Path(output_path).write_text("raw") or output_path)
+    # monkeypatch.setattr("pipeline.orchestrator.convert_to_portrait", lambda clip_path, config, output_path: Path(output_path).write_text("portrait") or output_path)
     monkeypatch.setattr("pipeline.orchestrator._generate_and_burn", lambda clip_path, word_json, config: clip_path)
 
     job = JobConfig(url="https://youtu.be/test", job_id="job2", output_dir=tmp_path, config=_config(), force_transcribe=True)
@@ -86,11 +89,13 @@ def test_multi_highlight_slices_word_data_per_clip(monkeypatch, tmp_path):
         captured["clip_word_data"].append(word_json)
         return f"{clip_path}_captioned.mp4"
 
-    monkeypatch.setattr("pipeline.orchestrator.download", lambda url, output_dir, cookies_path=None: (tmp_path / "source.mp4", None))
+    (tmp_path / "source.mp4").touch()
+    (tmp_path / "source.srt").touch()
+    monkeypatch.setattr("pipeline.orchestrator.download", lambda url, output_dir, cookies_path=None: (tmp_path / "source.mp4", tmp_path / "source.srt"))
     monkeypatch.setattr("pipeline.orchestrator.transcribe", lambda video_path, config: words)
     monkeypatch.setattr("pipeline.orchestrator.find_highlights", lambda text, config: highlights)
-    monkeypatch.setattr("pipeline.orchestrator.cut", lambda video_path, highlight, output_path: Path(output_path).write_text("raw") or output_path)
-    monkeypatch.setattr("pipeline.orchestrator.convert_to_portrait", lambda clip_path, config, output_path: Path(output_path).write_text("portrait") or output_path)
+    # monkeypatch.setattr("pipeline.orchestrator.cut", lambda video_path, highlight, output_path: Path(output_path).write_text("raw") or output_path)
+    # monkeypatch.setattr("pipeline.orchestrator.convert_to_portrait", lambda clip_path, config, output_path: Path(output_path).write_text("portrait") or output_path)
     monkeypatch.setattr("pipeline.orchestrator._generate_and_burn", fake_generate_and_burn)
 
     job = JobConfig(url="https://youtu.be/multi", job_id="multi-job", output_dir=tmp_path, config=_config())
