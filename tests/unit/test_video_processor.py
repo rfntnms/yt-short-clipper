@@ -219,7 +219,150 @@ def test_convert_to_portrait_single_mode_scale(
     assert "h264_nvenc" not in args
 
 
-# ── test 13: convert_to_portrait — GPU path applies hwaccel and nvenc ────
+# ── test 13: convert_to_portrait — uses speaker_layout SINGLE crop ───────
+@patch("pipeline.video_processor.subprocess.run")
+@patch("pipeline.video_processor.probe_dimensions")
+@patch("pipeline.video_processor.detect_cuda")
+@patch("pipeline.video_processor.speaker_layout.analyze")
+def test_convert_to_portrait_uses_speaker_layout_single_crop(
+    mock_analyze: MagicMock,
+    mock_cuda: MagicMock,
+    mock_probe: MagicMock,
+    mock_run: MagicMock,
+    fake_config: dict,
+    tmp_path: Path,
+) -> None:
+    from pipeline.speaker_layout import LayoutSegment, LayoutMode
+    mock_cuda.return_value = {"available": False, "name": None, "h264_nvenc_available": False}
+    mock_probe.return_value = (1920, 1080)
+    mock_run.return_value = _completed_proc(returncode=0)
+    
+    # Return a SINGLE mode segment with a tuple crop
+    mock_analyze.return_value = [
+        LayoutSegment(0.0, 10.0, LayoutMode.SINGLE, [(120, 840, 420)])
+    ]
+    
+    output = tmp_path / "portrait.mp4"
+    result = convert_to_portrait(str(tmp_path / "in.mp4"), fake_config, str(output))
+    
+    args = mock_run.call_args[0][0]
+    vf_idx = args.index("-vf")
+    filter_str = args[vf_idx + 1]
+    
+    # Expected: crop=1080:720:420:120,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2
+    assert "crop=1080:720:420:120" in filter_str
+    assert "scale=1080:1920:force_original_aspect_ratio=decrease" in filter_str
+    assert "pad=1080:1920:(ow-iw)/2:(oh-ih)/2" in filter_str
+
+
+# ── test 14: convert_to_portrait — SPLIT mode vertical stack ──────────────
+@patch("pipeline.video_processor.subprocess.run")
+@patch("pipeline.video_processor.probe_dimensions")
+@patch("pipeline.video_processor.detect_cuda")
+@patch("pipeline.video_processor.speaker_layout.analyze")
+def test_convert_to_portrait_split_mode(
+    mock_analyze: MagicMock,
+    mock_cuda: MagicMock,
+    mock_probe: MagicMock,
+    mock_run: MagicMock,
+    fake_config: dict,
+    tmp_path: Path,
+) -> None:
+    from pipeline.speaker_layout import LayoutSegment, LayoutMode
+    mock_cuda.return_value = {"available": False, "name": None, "h264_nvenc_available": False}
+    mock_probe.return_value = (1920, 1080)
+    mock_run.return_value = _completed_proc(returncode=0)
+    
+    # SPLIT segment with two tuple crops
+    mock_analyze.return_value = [
+        LayoutSegment(0.0, 10.0, LayoutMode.SPLIT, [
+            (0, 720, 100),
+            (120, 840, 840)
+        ])
+    ]
+    
+    output = tmp_path / "portrait.mp4"
+    result = convert_to_portrait(str(tmp_path / "in.mp4"), fake_config, str(output))
+    
+    args = mock_run.call_args[0][0]
+    vf_idx = args.index("-vf")
+    filter_str = args[vf_idx + 1]
+    
+    assert "[0:v]crop=1080:720:100:0,scale=1080:960:force_original_aspect_ratio=decrease,pad=1080:960:(ow-iw)/2:(oh-ih)/2[top];" in filter_str
+    assert "[0:v]crop=1080:720:840:120,scale=1080:960:force_original_aspect_ratio=decrease,pad=1080:960:(ow-iw)/2:(oh-ih)/2[bottom];" in filter_str
+    assert "[top][bottom]vstack=inputs=2,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2" in filter_str
+
+
+# ── test 15: convert_to_portrait — fallback when no crops ────────────────
+@patch("pipeline.video_processor.subprocess.run")
+@patch("pipeline.video_processor.probe_dimensions")
+@patch("pipeline.video_processor.detect_cuda")
+@patch("pipeline.video_processor.speaker_layout.analyze")
+def test_convert_to_portrait_fallback(
+    mock_analyze: MagicMock,
+    mock_cuda: MagicMock,
+    mock_probe: MagicMock,
+    mock_run: MagicMock,
+    fake_config: dict,
+    tmp_path: Path,
+) -> None:
+    from pipeline.speaker_layout import LayoutSegment, LayoutMode
+    mock_cuda.return_value = {"available": False, "name": None, "h264_nvenc_available": False}
+    mock_probe.return_value = (1920, 1080)  # 16:9
+    mock_run.return_value = _completed_proc(returncode=0)
+    
+    # Return empty layout to trigger fallback
+    mock_analyze.return_value = []
+    
+    output = tmp_path / "portrait.mp4"
+    result = convert_to_portrait(str(tmp_path / "in.mp4"), fake_config, str(output))
+    
+    args = mock_run.call_args[0][0]
+    vf_idx = args.index("-vf")
+    filter_str = args[vf_idx + 1]
+    
+    # Should use compute_center_crop: 606x1080 crop, then scaled/padded to 1080x1920
+    assert "crop=606:1080:657:0" in filter_str
+
+
+# ── test 16: convert_to_portrait — fallback when SPLIT disabled ──────────
+@patch("pipeline.video_processor.subprocess.run")
+@patch("pipeline.video_processor.probe_dimensions")
+@patch("pipeline.video_processor.detect_cuda")
+@patch("pipeline.video_processor.speaker_layout.analyze")
+def test_convert_to_portrait_split_disabled_fallback(
+    mock_analyze: MagicMock,
+    mock_cuda: MagicMock,
+    mock_probe: MagicMock,
+    mock_run: MagicMock,
+    fake_config: dict,
+    tmp_path: Path,
+) -> None:
+    from pipeline.speaker_layout import LayoutSegment, LayoutMode
+    mock_cuda.return_value = {"available": False, "name": None, "h264_nvenc_available": False}
+    mock_probe.return_value = (1920, 1080)
+    mock_run.return_value = _completed_proc(returncode=0)
+    
+    # config disables split
+    config = {"portrait": {"split_enabled": False}}
+    
+    # analyzer returns SPLIT mode anyway
+    mock_analyze.return_value = [
+        LayoutSegment(0.0, 10.0, LayoutMode.SPLIT, [(0, 720, 100), (120, 840, 840)])
+    ]
+    
+    output = tmp_path / "portrait.mp4"
+    result = convert_to_portrait(str(tmp_path / "in.mp4"), config, str(output))
+    
+    args = mock_run.call_args[0][0]
+    vf_idx = args.index("-vf")
+    filter_str = args[vf_idx + 1]
+    
+    # Should ignore the SPLIT segment because split_enabled=False and fallback
+    assert "crop=606:1080:657:0" in filter_str
+
+
+# ── test 17: convert_to_portrait — GPU path applies hwaccel and nvenc ────
 @patch("pipeline.video_processor.subprocess.run")
 @patch("pipeline.video_processor.probe_dimensions")
 @patch("pipeline.video_processor.detect_cuda")

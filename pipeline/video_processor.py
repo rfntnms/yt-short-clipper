@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.highlight_detector import Highlight
+from pipeline import speaker_layout
+from pipeline.speaker_layout import LayoutMode
 from utils.gpu_detector import detect_cuda, get_gpu_flags
 from utils.logger import logger
 
@@ -85,11 +87,13 @@ def convert_to_portrait(
     config: dict[str, Any],
     output_path: str,
 ) -> str:
-    """Convert a clip to 9:16 portrait (1080x1920) with center crop.
+    """Convert a clip to 9:16 portrait (1080x1920).
 
-    SINGLE mode only in MVP (Milestone 2).
-    Detects input resolution via ffprobe, computes a center crop that yields
-    a 9:16 region, then scales to 1080x1920.
+    Uses speaker_layout.analyze() to detect speakers and decide layout mode:
+    - SINGLE mode: crop to the dominant speaker's body-safe region
+    - SPLIT mode: dual-panel vstack with top-2 speakers
+    - Fallback: center crop when no speakers detected or SPLIT disabled
+
     Applies GPU hwaccel flags if CUDA + h264_nvenc are available.
 
     Args:
@@ -106,31 +110,22 @@ def convert_to_portrait(
     # Probe input resolution
     width, height = probe_dimensions(clip_path)
 
-    # Compute center crop for 9:16 aspect
-    cw, ch, cx, cy = compute_center_crop(width, height)
+    # Analyze speaker layout
+    segments: list[speaker_layout.LayoutSegment] = speaker_layout.analyze(
+        clip_path, config
+    )
+
+    # Build the video filter
+    vf = _build_portrait_filter(segments, config, width, height)
 
     # GPU flags
     gpu_info = detect_cuda()
     flags = get_gpu_flags(gpu_info)
     logger.info("Portrait conversion: %s", flags["description"])
 
-    # Build filter: crop center, then scale to 1080x1920
-    # scale=-2:1920 keeps aspect; with explicit crop we know it's 9:16
-    # Using 1080:-2 ensures width is exactly 1080, height adjusts
-    # But we want strictly 1080x1920 so we pad if needed after crop
-    # use force_original_aspect_ratio inside scale to pad black if crop != exact
-    vf = (
-        f"crop={cw}:{ch}:{cx}:{cy},"
-        f"scale={_OUTPUT_WIDTH}:{_OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease,"
-        f"pad={_OUTPUT_WIDTH}:{_OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
-    )
-
     hwaccel = flags.get("hwaccel", [])
     encoder = flags.get("encoder", "libx264")
 
-    # Quality flag must match the encoder family:
-    #   libx264      → -crf (constant rate factor)
-    #   h264_nvenc   → -cq  (constant quality; -crf is rejected)
     if encoder == "h264_nvenc":
         quality_args = ["-cq", "23"]
     else:
@@ -152,6 +147,78 @@ def convert_to_portrait(
     _run_ffmpeg(cmd, context=f"portrait({clip_path})")
     return output_path
 
+
+def _build_portrait_filter(
+    segments: list[speaker_layout.LayoutSegment],
+    config: dict[str, Any],
+    width: int,
+    height: int,
+) -> str:
+    """Build the FFmpeg video filter for SINGLE or SPLIT mode."""
+    portrait_cfg = config.get("portrait", {})
+    split_enabled = portrait_cfg.get("split_enabled", True)
+
+    use_split = False
+    use_single = False
+    crops = []
+
+    if segments:
+        seg = segments[0]
+        if seg.mode == LayoutMode.SPLIT and split_enabled and len(seg.speaker_crops) >= 2:
+            use_split = True
+            crops = seg.speaker_crops[:2]
+        elif seg.mode == LayoutMode.SINGLE and len(seg.speaker_crops) >= 1:
+            use_single = True
+            crops = [seg.speaker_crops[0]]
+
+    # Helper formatters
+    def scale_and_pad(w: int, h: int) -> str:
+        return f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+
+    if use_split:
+        # Dual-panel vertical stack
+        c1, c2 = crops[0], crops[1]
+        
+        # Unpack tuple crops or use CropRegion old API if present
+        if isinstance(c1, tuple):
+            t1, b1, x1 = c1
+            h1 = b1 - t1
+            w1 = 1080
+        else:
+            t1, x1, w1, h1 = c1.top, c1.left, c1.width, c1.height
+
+        if isinstance(c2, tuple):
+            t2, b2, x2 = c2
+            h2 = b2 - t2
+            w2 = 1080
+        else:
+            t2, x2, w2, h2 = c2.top, c2.left, c2.width, c2.height
+
+        vf = (
+            f"[0:v]crop={w1}:{h1}:{x1}:{t1},{scale_and_pad(_OUTPUT_WIDTH, 960)}[top];"
+            f"[0:v]crop={w2}:{h2}:{x2}:{t2},{scale_and_pad(_OUTPUT_WIDTH, 960)}[bottom];"
+            f"[top][bottom]vstack=inputs=2,{scale_and_pad(_OUTPUT_WIDTH, _OUTPUT_HEIGHT)}"
+        )
+        return vf
+
+    elif use_single:
+        # Single speaker crop
+        c = crops[0]
+        if isinstance(c, tuple):
+            t, b, x = c
+            h = b - t
+            w = 1080
+        else:
+            t, x, w, h = c.top, c.left, c.width, c.height
+
+        vf = f"crop={w}:{h}:{x}:{t},{scale_and_pad(_OUTPUT_WIDTH, _OUTPUT_HEIGHT)}"
+        return vf
+
+    else:
+        # Fallback to center crop
+        cw, ch, cx, cy = compute_center_crop(width, height)
+        vf = f"crop={cw}:{ch}:{cx}:{cy},{scale_and_pad(_OUTPUT_WIDTH, _OUTPUT_HEIGHT)}"
+        return vf
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
