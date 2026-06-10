@@ -90,12 +90,12 @@ def test_logger_redacts_json_api_key(tmp_log_dir, clean_logger_name):
 def test_logger_redacts_openai_sk_key(tmp_log_dir, clean_logger_name):
     """logger should redact raw sk- OpenAI style keys."""
     log = setup_logger(name=clean_logger_name, log_dir=tmp_log_dir)
-    secret = "sk-proXXXXXXXXXXXXXXXXXXXX"
-    log.info(f"Using {secret} for auth")
+    placeholder_key = "sk-TESTKEY"
+    log.info("Using sk-TESTKEY for auth")
     
     log_path = Path(tmp_log_dir) / "app.log"
     content = log_path.read_text(encoding="utf-8")
-    assert secret not in content
+    assert placeholder_key not in content
     assert "REDACTED" in content
 
 
