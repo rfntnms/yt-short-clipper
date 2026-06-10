@@ -78,22 +78,25 @@ def test_logger_redacts_api_key_value(tmp_log_dir, clean_logger_name):
 def test_logger_redacts_json_api_key(tmp_log_dir, clean_logger_name):
     """logger should redact 'api_key' in JSON-style config dumps."""
     log = setup_logger(name=clean_logger_name, log_dir=tmp_log_dir)
-    log.info('{"api_key": "sk-abcdefghijklmnopqrst", "model": "gpt-4"}')
+    secret = "sk-jso...7890"
+    log.info(f'{{"api_key": "{secret}", "model": "gpt-4"}}')
     
     log_path = Path(tmp_log_dir) / "app.log"
     content = log_path.read_text(encoding="utf-8")
-    assert "sk-abcdefghijklmnopqrst" not in content
+    assert secret not in content
     assert "REDACTED" in content
 
 
 def test_logger_redacts_openai_sk_key(tmp_log_dir, clean_logger_name):
     """logger should redact raw sk- OpenAI style keys."""
     log = setup_logger(name=clean_logger_name, log_dir=tmp_log_dir)
-    log.info("Using sk-proj1234567890abcdefghij for auth")
+    secret = "sk-proXXXXXXXXXXXXXXXXXXXX"
+    log.info(f"Using {secret} for auth")
     
     log_path = Path(tmp_log_dir) / "app.log"
     content = log_path.read_text(encoding="utf-8")
-    assert "sk-proj1234567890abcdefghij" not in content
+    assert secret not in content
+    assert "REDACTED" in content
 
 
 def test_default_logger_is_singleton():

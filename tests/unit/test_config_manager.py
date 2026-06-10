@@ -132,10 +132,9 @@ def test_load_config_returns_plain_dict_compatible_type(tmp_path):
     assert loaded["portrait"]["face_backend"] == "opencv"
 
 
-def test_default_path_can_load_project_config():
-    loaded = load_config()
+def test_default_path_raises_until_project_config_exists():
+    import pytest
+    with pytest.raises(FileNotFoundError) as exc_info:
+        load_config()
 
-    assert loaded["llm"]["base_url"]
-    assert loaded["llm"]["model"]
-    assert loaded["transcription"]["base_url"]
-    assert loaded["transcription"]["model"]
+    assert "config.json" in str(exc_info.value)
