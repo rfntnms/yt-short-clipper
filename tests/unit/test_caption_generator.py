@@ -36,10 +36,13 @@ class TestCaptionGenerator(unittest.TestCase):
         self.assertIn("Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,{\\c&H0000FFFF&}test ｛injection｝{\\c&H00FFFFFF&}", ass_text)
 
     @patch("pipeline.caption_generator.subprocess.run")
+    @patch("pipeline.caption_generator.detect_cuda")
     @patch("pipeline.caption_generator.os.remove")
     @patch("pipeline.caption_generator.os.path.exists")
-    def test_ffmpeg_subtitle_burn_command(self, mock_exists, mock_remove, mock_run):
+    def test_ffmpeg_subtitle_burn_command(self, mock_exists, mock_remove, mock_detect_cuda, mock_run):
         mock_exists.return_value = True # Pretend clip_path exists
+        
+        mock_detect_cuda.return_value = {"available": False, "h264_nvenc_available": False, "name": None}
         
         mock_proc = MagicMock()
         mock_proc.returncode = 0
