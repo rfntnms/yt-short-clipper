@@ -5,7 +5,7 @@ import json
 from typing import List, Dict, Any, Optional
 
 from utils.logger import logger
-from utils.gpu_detector import get_ffmpeg_hwaccel_flags
+from utils.gpu_detector import detect_cuda, get_gpu_flags
 
 class CaptioningError(Exception):
     """Raised when subtitle generation or burn-in fails."""
@@ -141,9 +141,15 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
         output_path = f"{base}_captioned{ext}"
         
         # Prepare FFmpeg command
-        hw_flags = get_ffmpeg_hwaccel_flags()
-        vcodec = hw_flags.get("vcodec", "libx264")
-        preset = hw_flags.get("preset", "fast")
+        gpu_info = detect_cuda()
+        hw_flags = get_gpu_flags(gpu_info)
+        vcodec = hw_flags.get("encoder", "libx264")
+        
+        # HW accel specific args (nvenc tak support preset fast sama persis kayak libx264)
+        if vcodec == "h264_nvenc":
+            preset_args = ["-preset", "p4"] # medium-ish for nvenc
+        else:
+            preset_args = ["-preset", "fast"]
         
         # Subtitles filter needs paths escaped properly for FFmpeg
         # We wrap in single quotes to protect spaces, but must escape inner single quotes
@@ -151,15 +157,14 @@ def generate_and_burn(clip_path: str, word_json: List[Dict[str, Any]], config: d
             ass_path
             .replace("\\", "\\\\")
             .replace(":", "\\:")
-            .replace("'", "\\'")
         )
         
         cmd = [
             "ffmpeg", "-y",
             "-i", clip_path,
-            "-vf", f"ass='{escaped_ass_path}'",
+            "-vf", f"ass={escaped_ass_path}",
             "-c:v", vcodec,
-            "-preset", preset,
+            *preset_args,
             "-c:a", "copy",
             output_path
         ]
